@@ -122,6 +122,41 @@ class TestElementRelease:
         assert r.end == "j"
 
 
+class TestFrameSection:
+    def test_polygon_section_fields(self) -> None:
+        section = FrameSection(
+            id="BOX",
+            name="Box girder",
+            material_id="C50",
+            A=10.0,
+            Iy=20.0,
+            Iz=30.0,
+            J=15.0,
+            outer_boundary=[(-3.0, -1.5), (3.0, -1.5), (3.0, 1.5), (-3.0, 1.5)],
+            holes=[[(-2.0, -0.8), (2.0, -0.8), (2.0, 0.8), (-2.0, 0.8)]],
+            mesh_size=0.1,
+            midas_offset="CT",
+        )
+
+        assert section.outer_boundary is not None
+        assert len(section.outer_boundary) == 4
+        assert len(section.holes) == 1
+        assert section.midas_offset == "CT"
+
+    def test_outer_boundary_requires_three_points(self) -> None:
+        with pytest.raises(ValidationError):
+            FrameSection(
+                id="BAD",
+                name="Bad",
+                material_id="C50",
+                A=1.0,
+                Iy=1.0,
+                Iz=1.0,
+                J=1.0,
+                outer_boundary=[(0.0, 0.0), (1.0, 0.0)],
+            )
+
+
 class TestTrack:
     def test_ballasted_limit(self) -> None:
         t = Track(id="T1", name="Track 1", ballast_type="ballasted")

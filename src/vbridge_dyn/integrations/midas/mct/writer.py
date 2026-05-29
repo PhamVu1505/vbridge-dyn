@@ -15,6 +15,10 @@ from pathlib import Path
 from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.project import Project
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
+from vbridge_dyn.integrations.midas.mct.sections import (
+    SectionPolygonUnavailableError,
+    build_polygon_section_lines,
+)
 
 _GRAVITY = 9.806
 
@@ -37,7 +41,7 @@ def write_base_model_mct(project: Project, path: Path) -> list[str]:
     _append_elements(lines, bridge, maps)
     _append_groups(lines, bridge)
     _append_materials(lines, bridge, maps)
-    _append_sections(lines, bridge, maps)
+    _append_sections(lines, bridge, maps, warnings)
     _append_constraints(lines, bridge)
     _append_rigid_links(lines, bridge)
     lines.append("*ENDDATA")
@@ -196,7 +200,12 @@ def _material_line(material: Material, midas_id: int) -> str:
     )
 
 
-def _append_sections(lines: list[str], bridge: Bridge, maps: _MctIdMaps) -> None:
+def _append_sections(
+    lines: list[str],
+    bridge: Bridge,
+    maps: _MctIdMaps,
+    warnings: list[str],
+) -> None:
     lines.extend(
         [
             "*SECT-PSCVALUE    ; PSC Value, General Section, Composite PC, Composite General",
@@ -206,21 +215,47 @@ def _append_sections(lines: list[str], bridge: Bridge, maps: _MctIdMaps) -> None
             ";      Y1, Y2, Y3, Y4, Z1, Z2, Z3, Z4",
         ],
     )
+    materials_by_id = {material.id: material for material in bridge.materials}
     for section in sorted(bridge.sections, key=lambda item: maps.section_ids[item.id]):
-        _append_section(lines, section, maps.section_ids[section.id])
+        _append_section(
+            lines,
+            section,
+            materials_by_id[section.material_id],
+            maps.section_ids[section.id],
+            warnings,
+        )
     lines.append("")
 
 
-def _append_section(lines: list[str], section: FrameSection, midas_id: int) -> None:
+def _append_section(
+    lines: list[str],
+    section: FrameSection,
+    material: Material,
+    midas_id: int,
+    warnings: list[str],
+) -> None:
+    if section.outer_boundary:
+        try:
+            lines.extend(build_polygon_section_lines(section, material, midas_id))
+            return
+        except SectionPolygonUnavailableError as exc:
+            warnings.append(f"Section {section.id}: {exc}; fallback stiffness-only.")
+        except Exception as exc:
+            warnings.append(
+                f"Section {section.id}: lỗi sinh polygon section ({type(exc).__name__}: {exc}); "
+                "fallback stiffness-only."
+            )
+
     asy = section.A if section.Asy is None else section.Asy
     asz = section.A if section.Asz is None else section.Asz
     cy = _section_half_width(section)
     cz = _section_half_depth(section)
     perimeter = 4.0 * (cy + cz)
+    prefix = section.midas_offset or "CC"
     lines.extend(
         [
             (
-                f"SECT={midas_id:>4}, VALUE     , {_text(section.name):<18}, CC, 0, 0, "
+                f"SECT={midas_id:>4}, VALUE     , {_text(section.name):<18}, {prefix}, 0, 0, "
                 "0, 0, 0, 0, YES, NO, GEN, YES, YES"
             ),
             (

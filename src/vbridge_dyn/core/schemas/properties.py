@@ -22,10 +22,11 @@ class Material(BaseModel):
 class FrameSection(BaseModel):
     """Mặt cắt khung (1D beam properties).
 
-    Cho v0.1 chỉ hỗ trợ SECT-GENERAL với 6 đặc trưng cơ bản. Section coordinates
-    (outer boundary) sẽ thêm ở v0.2 cùng với sectionproperties pipeline để tự
-    sinh `*SECT-GENERAL` block đầy đủ (kèm Asy/Asz, Cy/Cz, Y1..4/Z1..4 cho
-    stress check).
+    `A/Iy/Iz/J/Asy/Asz` là fallback stiffness-only.
+
+    Nếu có `outer_boundary`, MCT writer dùng pipeline polygon theo repo
+    Converte_RM_to_Midas: tính properties bằng sectionproperties rồi sinh
+    `*SECT-PSCVALUE` kèm `OPOLY/IPOLY` và stress check points STIFF3.
     """
 
     id: str
@@ -38,6 +39,34 @@ class FrameSection(BaseModel):
     Asy: float | None = Field(default=None, description="Diện tích chịu cắt theo y (m²)")
     Asz: float | None = Field(default=None, description="Diện tích chịu cắt theo z (m²)")
     kind: Literal["girder", "pier", "cross_beam", "truss", "other"] = "girder"
+    outer_boundary: list[tuple[float, float]] | None = Field(
+        default=None,
+        description="Polygon ngoài theo tọa độ local section Y-Z (m).",
+    )
+    holes: list[list[tuple[float, float]]] = Field(
+        default_factory=list,
+        description="Các polygon lỗ rỗng theo tọa độ local section Y-Z (m).",
+    )
+    mesh_size: float = Field(
+        default=0.05,
+        gt=0,
+        description="Mesh size dùng cho sectionproperties khi sinh section polygon.",
+    )
+    midas_offset: Literal["CC", "CT", "CB"] | None = Field(
+        default=None,
+        description="Override offset prefix Midas. None = tự detect từ centroid.",
+    )
+
+    @model_validator(mode="after")
+    def _check_polygon_inputs(self) -> "FrameSection":
+        if self.outer_boundary is not None and len(self.outer_boundary) < 3:
+            msg = f"Section '{self.id}' outer_boundary phải có ít nhất 3 điểm"
+            raise ValueError(msg)
+        for i, hole in enumerate(self.holes, start=1):
+            if len(hole) < 3:
+                msg = f"Section '{self.id}' hole #{i} phải có ít nhất 3 điểm"
+                raise ValueError(msg)
+        return self
 
 
 class ElementRelease(BaseModel):
