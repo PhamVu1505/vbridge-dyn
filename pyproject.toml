@@ -58,6 +58,7 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "pre-commit>=3.7",
+    "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -119,7 +120,7 @@ plugins = ["pydantic.mypy"]
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["openpyxl.*", "pyarrow.*", "reportlab.*", "matplotlib.*", "pyvista.*", "pyqtgraph.*"]
+module = ["openpyxl.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

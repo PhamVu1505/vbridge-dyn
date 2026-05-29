@@ -9,6 +9,11 @@ from vbridge_dyn.core.schemas.boundary import ElasticLink, RigidLink, Support
 from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.geometry import CoordinateSystem, Element, Node
 from vbridge_dyn.core.schemas.groups import BoundaryGroup, LoadGroup, StructureGroup
+from vbridge_dyn.core.schemas.manifest import (
+    CaseEntry,
+    GenerationManifest,
+    StationRef,
+)
 from vbridge_dyn.core.schemas.mass import ElementDistributedMass, NodalMass
 from vbridge_dyn.core.schemas.project import Project, ProjectMeta
 from vbridge_dyn.core.schemas.properties import ElementRelease, FrameSection, Material
@@ -21,12 +26,14 @@ __all__ = [
     "Axle",
     "BoundaryGroup",
     "Bridge",
+    "CaseEntry",
     "CoordinateSystem",
     "ElasticLink",
     "Element",
     "ElementDistributedMass",
     "ElementRelease",
     "FrameSection",
+    "GenerationManifest",
     "LoadDistribution",
     "LoadGroup",
     "Material",
@@ -36,6 +43,7 @@ __all__ = [
     "ProjectMeta",
     "ResultStation",
     "RigidLink",
+    "StationRef",
     "StructureGroup",
     "Support",
     "Track",

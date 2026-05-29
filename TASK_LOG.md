@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-05-29 — Fix mypy, lock manifest schema, đổi tên test (P1-P3 follow-up)
+
+**Quyết định** (theo review user):
+
+- **P1 — Fix 9 mypy errors** (CI sẽ fail nếu không fix):
+  - `train.py:36`: `catalog_meta: dict` → `dict[str, Any]` (thêm `from typing import Any`)
+  - `workbook_reader.py:23`: thêm type `ws: Worksheet`
+  - `workbook_reader.py:188`: signature `read_bridge_workbook() -> Bridge` → `tuple[Bridge, list[Track]]` (đúng với thực tế trả 2-tuple)
+  - `workbook_reader.py:202`: thêm type `wb: Workbook` cho `_read_tracks`
+  - `project_io.py:6` + `validate.py:8`: thêm `types-PyYAML>=6.0` vào dev deps
+  - `validate.py:45`: `tracks_from_excel: list` → `list[Track]` (import Track)
+  - `validate.py:48`: type của `raw` được khóa `dict[str, Any]`, tuple unpack từ read_bridge_workbook giờ đúng type
+  - `pyproject.toml`: dọn `[[tool.mypy.overrides]]` chỉ giữ `openpyxl.*` (các deps khác đã có stubs hoặc không import)
+  - Verify: `mypy src` → "Success: no issues found in 28 source files"
+
+- **P2 — Lock `generation_manifest.json` schema** (acceptance v0.1):
+  - `core/schemas/manifest.py`: `GenerationManifest` + `CaseEntry` + `StationRef`
+  - Trường chính: target, target_version, run_id, generated_at, vbridge_dyn_version, project_name, project_hash, case_split_strategy, moving_load_strategy, cases (list), output_dir, expected_solver_outputs_dir
+  - CaseEntry: case_name, case_kind (modal | time_history | static_envelope), mct_file, expected_csv_name, train_id, velocity_kmh, stations, signals, midas_load_case_name, time_history_case_name
+  - StationRef: station_id, midas_node_ids, midas_element_ids, interpolation (direct | linear), eta
+  - Helper properties: n_cases, trains_covered, velocities_kmh
+  - 8 tests trong `test_manifest_schema.py`: required fields, train coverage, velocities, case kinds, interpolation modes, JSON roundtrip + file IO, grouped_by_train invariant, validation negative cases
+  - Re-export trong `core/schemas/__init__.py`
+  - Wording PROJECT_STATUS.md: "v0.1 skeleton hoàn tất" → "foundation skeleton complete; v0.1 acceptance đã đạt" để chính xác (vẫn in-progress về tuần 1/3 nhưng đã đạt acceptance)
+
+- **P3 — Đổi tên test cho đúng coverage thật**:
+  - `test_validate_empty_bridge_reports_failures` → `test_validate_template_only_reports_missing_trains` (rõ ràng: template có sample hợp lệ nên Bridge PASS, chỉ FAIL vì Trains rỗng — đó là expected behavior)
+  - Thêm test mới `test_validate_missing_supports_fails_bridge_check`: xóa Supports khỏi bridge.xlsx bằng openpyxl → validate fail ngay ở bridge level (cover scenario user xóa data)
+
+**Verify final**:
+- ruff check: PASS
+- ruff format --check: PASS
+- mypy src: 28 files, no issues
+- pytest tests/unit: 33/33 PASS (24 cũ + 8 manifest + 1 missing supports = 33)
+
+---
+
 ## 2026-05-29 — v0.1 skeleton chạy được (init + validate + tests)
 
 **Đã làm**:

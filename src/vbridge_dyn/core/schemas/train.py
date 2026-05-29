@@ -4,7 +4,7 @@ Hỗ trợ: LM71, SW/0, SW/2, HSLM-A1..A10, HSLM-B, Thalys, ICE, EMU, custom.
 Catalog **không** ship sẵn (bản quyền TCVN/EN); user import từ Excel.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,4 +33,4 @@ class TrainModel(BaseModel):
     kind: TrainKind
     axles: list[Axle] = Field(min_length=1)
     length: float = Field(gt=0, description="Tổng chiều dài đoàn tàu (m)")
-    catalog_meta: dict = Field(default_factory=dict)
+    catalog_meta: dict[str, Any] = Field(default_factory=dict)

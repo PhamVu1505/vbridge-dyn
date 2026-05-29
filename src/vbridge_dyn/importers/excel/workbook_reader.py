@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.workbook.workbook import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from vbridge_dyn.core.schemas.boundary import ElasticLink, RigidLink, Support
 from vbridge_dyn.core.schemas.bridge import Bridge
@@ -20,7 +22,7 @@ from vbridge_dyn.core.schemas.properties import FrameSection, Material
 from vbridge_dyn.core.schemas.track import Track
 
 
-def _read_rows(ws) -> list[dict[str, Any]]:
+def _read_rows(ws: Worksheet) -> list[dict[str, Any]]:
     """Đọc sheet → list[dict] theo header dòng 1."""
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
@@ -45,8 +47,8 @@ def _split_ids(value: Any) -> list[int]:
     return [int(x.strip()) for x in s.split(",") if x.strip()]
 
 
-def read_bridge_workbook(path: Path) -> Bridge:
-    """Load bridge.xlsx và validate → `Bridge`."""
+def read_bridge_workbook(path: Path) -> tuple[Bridge, list[Track]]:
+    """Load bridge.xlsx → `(Bridge, list[Track])` (validate qua pydantic)."""
     wb = load_workbook(path, data_only=True, read_only=True)
 
     def _rows(name: str) -> list[dict[str, Any]]:
@@ -185,7 +187,7 @@ def read_bridge_workbook(path: Path) -> Bridge:
         for r in _rows("StructureGroups")
     ]
 
-    return Bridge(
+    bridge = Bridge(
         nodes=nodes,
         elements=elements,
         materials=materials,
@@ -196,10 +198,12 @@ def read_bridge_workbook(path: Path) -> Bridge:
         nodal_masses=nodal_masses,
         distributed_masses=distributed_masses,
         structure_groups=structure_groups,
-    ), _read_tracks(wb)
+    )
+    tracks = _read_tracks(wb)
+    return bridge, tracks
 
 
-def _read_tracks(wb) -> list[Track]:
+def _read_tracks(wb: Workbook) -> list[Track]:
     if "Tracks" not in wb.sheetnames:
         return []
     rows = _read_rows(wb["Tracks"])

@@ -7,7 +7,7 @@
 
 ## Current version
 
-**v0.1 — Foundation (in-progress, tuần 1/3)** — skeleton chạy được
+**v0.1 — Foundation (in-progress, tuần 1/3)** — foundation skeleton complete; v0.1 acceptance đã đạt
 
 - [x] Plan rev9 đã duyệt — [`docs/PLAN_REV9.md`](./docs/PLAN_REV9.md)
 - [x] 4 file tracking + `AGENTS.md`
@@ -23,6 +23,8 @@
 - [x] `examples/hcm_cg/` initialized (HSR HCM-Cần Giờ benchmark V09 placeholder)
 - [x] Reverse-engineer MCT mẫu `16 Eurocode Rail loads Final.mct` (36 sections, 2534 dòng) → đã hiểu cú pháp `*NODE` `*ELEMENT` `*MATERIAL` `*SECTION` `*CONSTRAINT` `*MVLDCODE` `*VEHICLE` `*MVLDCASE(EURO)` `*MV-DYFG` `*MOVE-CTRL`
 - [x] Tham khảo `refer/Converte_RM_to_Midas` (private repo): pipeline pattern, sectionproperties lib, ECC→Rigid Link, STIFF3 Euclidean
+- [x] **`generation_manifest.json` schema khóa** (GenerationManifest + CaseEntry + StationRef, pydantic v2 trong `core/schemas/manifest.py`) + 8 tests roundtrip/validation
+- [x] mypy strict clean (28 source files), ruff check + format clean, 33/33 tests PASS
 
 ---
 

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
 from vbridge_dyn.core.schemas.project import Project
+from vbridge_dyn.core.schemas.track import Track
 from vbridge_dyn.importers.excel.workbook_reader import read_bridge_workbook
 
 
@@ -37,12 +39,12 @@ def validate_project(folder: Path) -> tuple[bool, list[CheckRow]]:
         rows.append(CheckRow("project.yaml", "FAIL", f"Thiếu {yaml_path}"))
         return False, rows
 
-    raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    raw: dict[str, Any] = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
     bridge_raw = raw.get("bridge") or {}
     bridge_is_empty = not (bridge_raw.get("nodes") or bridge_raw.get("elements"))
 
     xlsx_path = folder / "bridge.xlsx"
-    tracks_from_excel: list = []
+    tracks_from_excel: list[Track] = []
     if bridge_is_empty and xlsx_path.exists():
         try:
             bridge_obj, tracks_from_excel = read_bridge_workbook(xlsx_path)
