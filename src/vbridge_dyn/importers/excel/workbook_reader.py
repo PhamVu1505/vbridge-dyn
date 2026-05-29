@@ -6,6 +6,7 @@ materials/sections/nodes/elements là bắt buộc.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,36 @@ def _split_ids(value: Any) -> list[int]:
         return []
     s = str(value).replace(";", ",")
     return [int(x.strip()) for x in s.split(",") if x.strip()]
+
+
+def _parse_point_pairs(value: Any) -> list[tuple[float, float]] | None:
+    if value is None or value == "":
+        return None
+    raw = json.loads(str(value))
+    return _coerce_point_pairs(raw)
+
+
+def _parse_holes(value: Any) -> list[list[tuple[float, float]]]:
+    if value is None or value == "":
+        return []
+    raw = json.loads(str(value))
+    if not isinstance(raw, list):
+        msg = "holes phải là JSON array các polygon"
+        raise ValueError(msg)
+    return [_coerce_point_pairs(hole) for hole in raw]
+
+
+def _coerce_point_pairs(raw: Any) -> list[tuple[float, float]]:
+    if not isinstance(raw, list):
+        msg = "polygon phải là JSON array các điểm [y,z]"
+        raise ValueError(msg)
+    points: list[tuple[float, float]] = []
+    for item in raw:
+        if not isinstance(item, list | tuple) or len(item) != 2:
+            msg = f"điểm polygon không hợp lệ: {item!r}"
+            raise ValueError(msg)
+        points.append((float(item[0]), float(item[1])))
+    return points
 
 
 def read_bridge_workbook(path: Path) -> tuple[Bridge, list[Track]]:
@@ -110,6 +141,10 @@ def read_bridge_workbook(path: Path) -> tuple[Bridge, list[Track]]:
             Asy=float(r["Asy"]) if r.get("Asy") not in (None, "") else None,
             Asz=float(r["Asz"]) if r.get("Asz") not in (None, "") else None,
             kind=str(r.get("kind") or "girder"),
+            outer_boundary=_parse_point_pairs(r.get("outer_boundary")),
+            holes=_parse_holes(r.get("holes")),
+            mesh_size=float(r.get("mesh_size") or 0.05),
+            midas_offset=str(r["midas_offset"]) if r.get("midas_offset") else None,
         )
         for r in _rows("Sections")
     ]

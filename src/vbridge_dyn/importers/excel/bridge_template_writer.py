@@ -4,7 +4,8 @@ Sheets:
 - Nodes        : id, x, y, z
 - Elements     : id, type, n1, n2, material_id, section_id, structure_group
 - Materials    : id, name, kind, grade, E, nu, rho, alpha_T, damping_ratio
-- Sections     : id, name, material_id, A, Iy, Iz, J, Asy, Asz, kind
+- Sections     : id, name, material_id, A, Iy, Iz, J, Asy, Asz, kind,
+                 outer_boundary, holes, mesh_size, midas_offset
 - Supports     : node_id, Ux, Uy, Uz, Rx, Ry, Rz, boundary_group
 - ElasticLinks : id, n1, n2, kx, ky, kz, krx, kry, krz, boundary_group
 - RigidLinks   : id, master, slaves, dof_mask, boundary_group
@@ -127,7 +128,27 @@ def write_bridge_template(path: Path) -> None:
     ws = wb.create_sheet("Sections")
     _set_header(
         ws,
-        ["id", "name", "material_id", "A", "Iy", "Iz", "J", "Asy", "Asz", "kind"],
+        [
+            "id",
+            "name",
+            "material_id",
+            "A",
+            "Iy",
+            "Iz",
+            "J",
+            "Asy",
+            "Asz",
+            "kind",
+            "outer_boundary",
+            "holes",
+            "mesh_size",
+            "midas_offset",
+        ],
+    )
+    _add_note(
+        ws,
+        3,
+        "Note: outer_boundary JSON dạng [[y,z],...]; holes JSON dạng [[[y,z],...],...].",
     )
     ws.cell(row=2, column=1, value="MainGirder")
     ws.cell(row=2, column=2, value="Dầm chính hộp BTCT")
@@ -137,6 +158,7 @@ def write_bridge_template(path: Path) -> None:
     ws.cell(row=2, column=6, value=18.5)
     ws.cell(row=2, column=7, value=12.3)
     ws.cell(row=2, column=10, value="girder")
+    ws.cell(row=2, column=13, value=0.05)
 
     # Supports — pin tại node 1, roller tại node 2
     ws = wb.create_sheet("Supports")
