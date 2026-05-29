@@ -251,7 +251,7 @@ def _append_constraints(lines: list[str], bridge: Bridge) -> None:
     lines.extend(["*CONSTRAINT    ; Supports", "; NODE_LIST, CONST(Dx,Dy,Dz,Rx,Ry,Rz), GROUP"])
     for support in sorted(bridge.supports, key=lambda item: item.node_id):
         mask = "".join(str(value) for value in support.constraint)
-        lines.append(f"   {support.node_id}, {mask}, {_text(support.boundary_group)}")
+        lines.append(f"   {support.node_id}, {mask}, ")
     lines.append("")
 
 
@@ -260,9 +260,7 @@ def _append_rigid_links(lines: list[str], bridge: Bridge) -> None:
         return
     lines.extend(["*RIGIDLINK    ; Rigid Link", "; M-NODE, DOF, S-NODE LIST, GROUP"])
     for link in sorted(bridge.rigid_links, key=lambda item: item.id):
-        lines.append(
-            f"   {link.master}, {link.dof_mask}, {_id_list(link.slaves)}, {_text(link.boundary_group)}"
-        )
+        lines.append(f"   {link.master}, {link.dof_mask}, {_id_list(link.slaves)}, ")
     lines.append("")
 
 

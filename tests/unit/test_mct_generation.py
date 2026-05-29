@@ -27,6 +27,8 @@ def test_generate_midas_mct_from_init_template(tmp_path: Path) -> None:
     assert "*MATERIAL" in text
     assert "*SECT-PSCVALUE" in text
     assert "*CONSTRAINT" in text
+    assert "   1, 111000, " in text
+    assert "Bearings" not in text
     assert "*ENDDATA" in text
     assert result.manifest_path.exists()
 
