@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from vbridge_dyn import __version__
+from vbridge_dyn.cli.commands.generate import generate_project
 from vbridge_dyn.cli.commands.init import init_project
 from vbridge_dyn.cli.commands.validate import validate_project
 
@@ -85,6 +86,14 @@ def cmd_validate(
     console.print(table)
     if not ok:
         raise typer.Exit(1)
+
+
+@app.command(name="generate", help="Sinh input files cho solver (Midas/RM).")
+def cmd_generate(
+    folder: Path = typer.Argument(..., help="Đường dẫn folder project."),
+    target: str = typer.Option("midas", "--target", "-t", help="midas | rm_bridge."),
+) -> None:
+    generate_project(folder=folder, target=target, console=console)
 
 
 @app.command(name="info", help="Thông tin về VBridge-Dyn (version, paths).")

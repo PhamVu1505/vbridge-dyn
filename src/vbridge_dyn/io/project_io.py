@@ -6,6 +6,15 @@ from typing import Any
 import yaml
 
 from vbridge_dyn.core.schemas.project import Project
+from vbridge_dyn.importers.excel.workbook_reader import read_bridge_workbook
+
+
+def _load_yaml_dict(path: Path) -> dict[str, Any]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        msg = f"{path} không phải YAML mapping hợp lệ"
+        raise ValueError(msg)
+    return data
 
 
 def load_project_yaml(path: Path) -> Project:
@@ -15,7 +24,28 @@ def load_project_yaml(path: Path) -> Project:
     importers/excel/workbook_reader.py). Nếu project.yaml chỉ có
     `bridge.workbook: <path>`, caller phải bổ sung Bridge sau khi đọc Excel.
     """
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = _load_yaml_dict(path)
+    return Project.model_validate(data)
+
+
+def load_project_folder(folder: Path) -> Project:
+    """Load project folder, tự merge `bridge.xlsx` khi `project.yaml.bridge` rỗng."""
+    yaml_path = folder / "project.yaml"
+    data = _load_yaml_dict(yaml_path)
+
+    bridge_raw = data.get("bridge") or {}
+    if not isinstance(bridge_raw, dict):
+        msg = "project.yaml bridge phải là mapping"
+        raise ValueError(msg)
+
+    bridge_is_empty = not (bridge_raw.get("nodes") or bridge_raw.get("elements"))
+    xlsx_path = folder / "bridge.xlsx"
+    if bridge_is_empty and xlsx_path.exists():
+        bridge, tracks = read_bridge_workbook(xlsx_path)
+        data["bridge"] = bridge.model_dump(mode="json")
+        if not data.get("tracks") and tracks:
+            data["tracks"] = [track.model_dump(mode="json") for track in tracks]
+
     return Project.model_validate(data)
 
 
