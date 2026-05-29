@@ -7,40 +7,40 @@
 
 ## Current version
 
-**v0.0 — Pre-foundation** (chưa bắt đầu v0.1)
+**v0.1 — Foundation (in-progress, tuần 1/3)** — skeleton chạy được
 
-- [x] Plan rev9 đã được duyệt — bản trong repo: [`docs/PLAN_REV9.md`](./docs/PLAN_REV9.md)
-- [x] Project folder `vbridge-dyn/` đã tạo
-- [x] 4 file tracking md đã tạo: `README.md`, `CLAUDE.md`, `PROJECT_STATUS.md` (file này), `TASK_LOG.md`
-- [x] `AGENTS.md` đã tạo (entry point cho mọi agent/dev)
-- [x] `docs/PLAN_REV9.md` đã copy vào repo (self-contained, không phụ thuộc `.claude/`)
-- [ ] **Bắt đầu v0.1** sau khi user xác nhận hoặc tự khởi động khi sẵn sàng
+- [x] Plan rev9 đã duyệt — [`docs/PLAN_REV9.md`](./docs/PLAN_REV9.md)
+- [x] 4 file tracking + `AGENTS.md`
+- [x] `pyproject.toml` (pip + uv compat), `src/vbridge_dyn/` skeleton
+- [x] Pydantic schemas: units, geometry, properties, boundary, mass, groups, track, train, analysis, result_station, bridge, project
+- [x] `io/project_io.py` + `io/project_templates.py` (project.yaml generator)
+- [x] `importers/excel/`: template writer + workbook reader (11 sheets)
+- [x] CLI Typer: `vbdyn --version | info | init | validate`
+- [x] Tests: 23/23 PASS (schemas + CLI roundtrip + Excel roundtrip)
+- [x] Ruff + ruff format clean, mypy strict cấu hình sẵn
+- [x] CI workflow `.github/workflows/ci.yml` (ubuntu + windows × py3.11/3.12)
+- [x] Apache-2.0 LICENSE, `.gitignore` Python + project-specific
+- [x] `examples/hcm_cg/` initialized (HSR HCM-Cần Giờ benchmark V09 placeholder)
+- [x] Reverse-engineer MCT mẫu `16 Eurocode Rail loads Final.mct` (36 sections, 2534 dòng) → đã hiểu cú pháp `*NODE` `*ELEMENT` `*MATERIAL` `*SECTION` `*CONSTRAINT` `*MVLDCODE` `*VEHICLE` `*MVLDCASE(EURO)` `*MV-DYFG` `*MOVE-CTRL`
+- [x] Tham khảo `refer/Converte_RM_to_Midas` (private repo): pipeline pattern, sectionproperties lib, ECC→Rigid Link, STIFF3 Euclidean
 
 ---
 
 ## Active focus (v0.0 → v0.1)
 
-### Việc tiếp theo cần làm
+### Việc tiếp theo (v0.1 → v0.2)
 
-1. [ ] Khởi tạo `pyproject.toml` + `uv.lock` + `src/vbridge_dyn/` skeleton
-2. [ ] Setup CI: ruff + mypy + pytest + pre-commit
-3. [ ] Pydantic schemas v0.1 (theo `CLAUDE.md` §4):
-   - [ ] `core/schemas/units.py`
-   - [ ] `core/schemas/geometry.py` (Node, Element, CoordinateSystem)
-   - [ ] `core/schemas/properties.py` (Material, FrameSection, ElementRelease)
-   - [ ] `core/schemas/boundary.py` (Support, ElasticLink, RigidLink)
-   - [ ] `core/schemas/mass.py` (NodalMass, ElementDistributedMass)
-   - [ ] `core/schemas/groups.py` (StructureGroup, BoundaryGroup, LoadGroup)
-   - [ ] `core/schemas/track.py`
-   - [ ] `core/schemas/train.py`
-   - [ ] `core/schemas/analysis.py`
-   - [ ] `core/schemas/result_station.py`
-   - [ ] `core/schemas/project.py`
-4. [ ] Excel template + reader: `importers/excel/templates/bridge_template.xlsx` + `workbook_reader.py`
-5. [ ] **Reverse-engineer 1 file MCT từ Midas Civil 2022** (cần file mẫu từ anh — B1)
-6. [ ] `cli/main.py` + `vbdyn init` + `vbdyn validate`
-7. [ ] **`generation_manifest.json` schema + writer** — *bắt buộc cho MVP vì không có API*; định nghĩa pydantic schema cho manifest (train, velocity_kmh, case_name, expected_csv_name, result_stations, node/element IDs)
-8. [ ] **`export_instructions.md` template generator** — sinh hướng dẫn cho user export từ Midas tay tới đâu, file CSV nào ứng case nào
+1. [x] `pyproject.toml` + skeleton + CI workflow
+2. [x] Pydantic schemas + Excel template + reader
+3. [x] CLI `init` + `validate` (load Excel auto-merge)
+4. [x] Reverse-engineer MCT mẫu `16 Eurocode Rail loads Final.mct` (block structure đã document)
+5. [ ] **Push code lên GitHub** — chờ user chạy lệnh `!gh repo create ...` (auto mode chặn)
+6. [ ] **`generation_manifest.json` schema + writer** — pydantic schema cho manifest mapping
+7. [ ] **`export_instructions.md` template generator** — hướng dẫn user export CSV
+8. [ ] v0.2: `integrations/midas/mct/{writer + blocks/}` cho geometry + properties + boundary + mass + groups + analysis_control
+9. [ ] v0.2: `standards/vietnam/tcvn13594/{damping, dynamic_required, speed_range, resonance, hslm_rules}.py`
+10. [ ] v0.2: Sinh được `case_modal.mct` cho 1 nhịp giản đơn, mở được trong Midas Civil 2022
+11. [ ] `examples/hcm_cg/`: nâng cấp bridge.xlsx lên 5 nhịp Main+Sub girder khi có dữ liệu cụ thể từ B1
 
 ### Acceptance v0.1
 

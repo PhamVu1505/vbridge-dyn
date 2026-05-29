@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-05-29 — v0.1 skeleton chạy được (init + validate + tests)
+
+**Đã làm**:
+- `pyproject.toml`: pip + uv compat, hatchling build, deps cứng (pydantic v2, typer, rich, pyyaml, pandas, openpyxl, numpy, scipy, pyarrow, matplotlib, reportlab, jinja2, loguru, h5py), optional `ui` (PySide6/pyqtgraph/pyvista), `sections` (sectionproperties/shapely/chardet), `dev` (pytest/hypothesis/ruff/mypy/pre-commit).
+- `src/vbridge_dyn/` skeleton:
+  - `core/schemas/`: units, geometry, properties, boundary, mass, groups, track, train, analysis, result_station, bridge, project (12 modules + __init__).
+  - `io/`: project_io (YAML load/save), project_templates (sinh project.yaml mẫu).
+  - `importers/excel/`: bridge_template_writer (11 sheets có sample + comment tiếng Việt) + workbook_reader (parse → Bridge schema).
+  - `cli/main.py` + `cli/commands/{init,validate}.py`: Typer app với `--version`, `info`, `init`, `validate`. Validate tự load bridge.xlsx khi project.yaml bridge rỗng.
+- Tests: 23/23 PASS
+  - `test_schemas.py` (17 tests): Bridge ref consistency, Support binary, RigidLink dof_mask, ElementRelease, Track accel_limit, ResultStation target, Project defaults
+  - `test_cli_init_validate.py` (4 tests): init creates folders, validate empty fails, info, --version
+  - `test_excel_template_roundtrip.py` (2 tests): write template → read back → check schema
+- Lint: ruff check + format clean (allow `×`, `≡`, `≥`, `°` Unicode khoa học; allow Typer B008 idiom + physics N815 cho alpha_T).
+- CI workflow `.github/workflows/ci.yml`: lint+mypy + tests trên ubuntu+windows × py3.11/3.12 + schedule weekly cho V03-V05/V09 reference benchmarks.
+- `.gitignore` + `LICENSE` (Apache-2.0).
+- `examples/hcm_cg/` init thành công, validate ra hầu hết PASS (chỉ FAIL Trains vì user chưa import HSLM/LM71 từ Excel — B2 blocker, expected).
+
+**Quyết định kỹ thuật**:
+- Validate dispatch: nếu `project.yaml > bridge` rỗng và `bridge.xlsx` tồn tại → tự load Excel merge vào Bridge schema. User không cần copy data từ Excel sang YAML.
+- Template `bridge.xlsx`: 11 sheets (Nodes/Elements/Materials/Sections/Supports/ElasticLinks/RigidLinks/NodalMasses/DistributedMasses/StructureGroups/Tracks) + `_README` sheet với hướng dẫn tiếng Việt. Đơn vị nội bộ SI; exporter sẽ tự đổi.
+- Project.yaml: comment tiếng Việt dẫn dắt từng block (standards_profile, tcvn13594_versions, design, dynamic, velocity_range, analysis, targets, checks, report).
+
+**Đã reverse-engineer MCT mẫu** (`refer/template_mct/16 Eurocode Rail loads Final.mct`, Midas 9.1.0, 2534 dòng, 36 sections):
+- File mẫu dùng pattern **moving load Eurocode** (`*MVLDCODE=EUROCODE`, `*LINELANE`, `*VEHICLE`, `*MVLDCASE(EURO)`, `*MV-DYFG`, `*MOVE-CTRL`) — đây là **static moving load + DAF** (giải pháp cho LM71/SW/0/SW/2), KHÔNG phải dynamic time-history.
+- Để làm **dynamic transient HSLM** (theo plan: `moving_load_strategy: time_history_function`) cần thêm `*EIGEN-CTRL`, `*TIME-HISTORY-FUNCTION`, `*TIME-HISTORY-LOAD`, `*TIME-HISTORY-CASE`, `*MODAL-DAMPING`. v0.2 sẽ research thêm sample MCT có time-history.
+- Tham khảo `refer/Converte_RM_to_Midas` (private, PhamVu1505): pipeline 12 steps (010-095), `sectionproperties` lib để tính Area/Iy/Iz/J/Asy/Asz từ outer boundary, ECC→Rigid Link conversion, STIFF3 max Euclidean distance from centroid (đã validated 100% match Midas SPC trên 38 file).
+
+**Blockers**:
+- B1 (vẫn open): cần thêm MCT mẫu có **time-history block** + có HSLM time function — để v0.2 sinh được full dynamic case.
+- B5 (mới): repo push lên GitHub bị auto mode chặn — user cần chạy `!gh repo create vbridge-dyn --private --source=... --remote=origin --push` thủ công, hoặc cấp permission.
+
+---
+
 ## 2026-05-29 — Sửa 3 điểm còn lệch sau review P1-P3
 
 **Quyết định** (theo review tiếp theo của user):
