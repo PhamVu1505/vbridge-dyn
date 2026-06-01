@@ -143,12 +143,15 @@ def write_bridge_template(path: Path) -> None:
             "holes",
             "mesh_size",
             "midas_offset",
+            "dxf_file",
         ],
     )
     _add_note(
         ws,
         3,
-        "Note: outer_boundary JSON dạng [[y,z],...]; holes JSON dạng [[[y,z],...],...].",
+        "Note: hình mặt cắt nhập 1 trong 2 cách — (a) dxf_file trỏ file DXF "
+        "(vd dxf/MG_01.dxf, đường bao+lỗ tự trích, A/Iy/Iz/J để trống); hoặc "
+        "(b) outer_boundary JSON [[y,z],...] + holes JSON [[[y,z],...],...].",
     )
     ws.cell(row=2, column=1, value="MainGirder")
     ws.cell(row=2, column=2, value="Dầm chính hộp BTCT")

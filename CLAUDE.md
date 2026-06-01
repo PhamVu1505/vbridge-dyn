@@ -115,6 +115,20 @@ src/vbridge_dyn/
 
 ---
 
+### MCT block keywords đã xác nhận (MIDAS manual + reverse-engineer template)
+
+- **Tĩnh / moving load**: `*NODE` `*ELEMENT` `*MATERIAL` `*SECT-PSCVALUE` `*CONSTRAINT`
+  `*RIGIDLINK` `*GROUP` `*STLDCASE` `*SELFWEIGHT` `*BEAMLOAD` `*MVLDCODE` `*LINELANE`
+  `*VEHICLE` `*MVLDCASE` `*MV-DYFG` `*MOVE-CTRL`.
+- **Dynamic time-history (v0.2+)**: `*EIGEN-CTRL` (modal), `*TFUNCTION` (time forcing
+  function), `*THLDCASE` (time-history load case), `*DYN-NLOAD` (dynamic nodal load).
+  **Field layout chờ file mẫu Midas 2022 (blocker B1).**
+- `*LINELANE` khai báo track bằng (element-list + ECC ngang) → track **tĩnh** KHÔNG cần
+  sub girder; **Train Load Generator** (động) mới cần sub-girder beam line. Chi tiết:
+  `projects/hcm_cg/SUB_GIRDER_RESEARCH.md`.
+
+---
+
 ## 5. Quyết định kiến trúc đã chốt (từ AskUserQuestion + reviews rev1..rev9)
 
 - **Backend**: Pre+Post processor cho Midas Civil 2022 + RM Bridge (Phase 2).
@@ -197,6 +211,8 @@ on-demand. V08, V10 chạy khi tới Phase 2/3.
 | KD-Railway snapshots | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\refer\KD_Railway_software\Snapshot\*.JPG` | UX inspiration |
 | KD-Railway repo | https://github.com/lekhuong/KD-Railway | File format tham khảo |
 | Plan chi tiết (bản trong repo) | [`docs/PLAN_REV9.md`](./docs/PLAN_REV9.md) | Rev9, đã được duyệt |
+| Research model HSR HCM-CG | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\projects\hcm_cg\` (`input_parameters.yaml`, `MODEL_UNDERSTANDING.md`, `SUB_GIRDER_RESEARCH.md`) | Dữ liệu dựng model 5 nhịp thật + nghiên cứu sub girder/tải tàu |
+| Converte_RM_to_Midas (private) | `...\refer\Converte_RM_to_Midas\src\` (`core/geometry.py`, `pipeline/step_020_json_to_mct.py`) | Gốc pipeline polygon section đã validate 100% Midas SPC (STIFF3 Euclidean) |
 
 ---
 

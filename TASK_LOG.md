@@ -5,6 +5,97 @@
 
 ---
 
+## 2026-06-01 — DXF section importer + vá writer fallback OPOLY
+
+**Bối cảnh**: Midas không hiển thị mặt cắt vì writer phát `SHAPE=GEN` mà **thiếu
+OPOLY** (section chỉ có A/Iy/Iz/J, không polygon → đi nhánh fallback). Owner xác
+nhận nguồn mặt cắt = file DXF (`projects/hcm_cg/dxf/MG_01.dxf`).
+
+**Quyết định** (qua AskUserQuestion):
+- Section tham chiếu DXF qua **cột `dxf_file`** trong sheet Sections.
+- Trích hình bằng **auto-chain toàn modelspace** (prune nhánh hở, vòng lớn nhất = bao ngoài).
+
+**Đã làm**:
+- Module mới `importers/dxf/section_reader.py` (`read_section_polygon`): ezdxf → gom
+  LINE/ARC/POLYLINE/INSERT thành đoạn → đổi đơn vị theo `$INSUNITS` → nối đồ thị →
+  **prune đỉnh bậc ≤ 1** (tự loại dimension/leader/text) → trace vòng kín → vòng lớn
+  nhất = outer, còn lại = holes; map DXF(x,y)→section(y,z). Thêm `ezdxf>=1.1` vào extra `[sections]`.
+- `workbook_reader.py`: đọc cột `dxf_file` (resolve theo thư mục workbook qua `base_dir`);
+  A/Iy/Iz/J cho phép trống khi có polygon (placeholder 1.0, writer tính lại).
+- `bridge_template_writer.py`: thêm cột `dxf_file` + note hướng dẫn 2 cách nhập hình.
+- **Vá writer fallback** (`writer.py`): section không polygon → tự sinh **OPOLY chữ
+  nhật** (±cy, ±cz) + warning; GEN section giờ LUÔN có hình hiển thị.
+- Tests: `test_dxf_section_reader.py` (4 ca: outer+hole, mm→m, chuỗi hở raise, vòng
+  lớn nhất=outer) + assert `OPOLY=` ở init template. **43/43 PASS**, ruff + mypy strict sạch.
+
+**Verify thật trên MG_01.dxf** (đối chiếu file Midas đã chạy `MG-001`):
+- `$INSUNITS=6` (m); dimension text khớp 1:1 hình học (H=3000↔3.0, ttop=300↔0.3, 7604↔7.6039).
+- Trích: bao ngoài 14 đỉnh + 2 lỗ 7 đỉnh; shapely valid; net area **20.93 m²**.
+- `vbdyn generate examples/hcm_cg` → `*SECT-PSCVALUE` đầy đủ STIFF1/2/3 + OPOLY + 2
+  IPOLY, prefix CT — **cấu trúc giống hệt file thật**. Đã copy MG_01.dxf + thêm cột
+  `dxf_file`/`mesh_size` vào `examples/hcm_cg/bridge.xlsx`.
+
+**Cần owner xác nhận**: MG_01 rộng **35 m** (±17.5) × cao 3 m, 2 lỗ ở cánh — lệch
+12.6 m trong `input_parameters.yaml` trước đó (có thể là section vẽ thử hôm nay).
+
+**Follow-up**: hỗ trợ ARC/bulge cho mặt cắt trụ cong (MG_01 toàn LINE nên chưa cần);
+port `detect_circle`→DBUSER cho cọc tròn.
+
+---
+
+## 2026-06-01 — Sync v0.2 + research sub girder & verify section generation
+
+**Bối cảnh**: code đã đi trước tracking docs (4 commit v0.2 chưa log). Phiên này
+đồng bộ docs + research thêm sub girder cho tải tàu + đối chiếu pipeline mặt cắt với
+code tham khảo `refer/020_Chuyển_json_sang_mct_và_gan_mat_cat_V4.py`.
+
+**Đã log các commit v0.2 (trước đó chưa ghi)**:
+- `538f544` feat(v0.2): MCT generator đầu tiên (writer + generator + CLI `generate --target midas`).
+- `c3fc17a` fix(mct): bỏ group boundary chưa khai báo.
+- `11247f0` feat(mct): sinh polygon section OPOLY/IPOLY.
+- `ea06a75` feat(excel): import polygon section geometry.
+- Writer hiện sinh: header + `*NODE` + `*ELEMENT` + `*GROUP` + `*MATERIAL`(+color) +
+  `*SECT-PSCVALUE` (polygon hoặc fallback stiffness-only) + `*CONSTRAINT` + `*RIGIDLINK`.
+  Manifest mới sinh 1 case modal (`case_modal_base`). Test **39/39 PASS**.
+
+**Verify mặt cắt (đối chiếu V4 + bản production Converte `src/`)**:
+- `integrations/midas/mct/sections.py` của vbridge **KHỚP thuật toán ĐÃ KIỂM CHỨNG**
+  trong `Converte_RM_to_Midas/src/core/geometry.py` (STIFF3 = max Euclidean distance từ
+  centroid trên boundary đã simplify; 100% match 38 file Midas SPC). **KHÔNG** phải bản
+  `020...V4.py` cũ — V4 dùng mesh vertices + tolerance top/bottom region, đã bị thay thế.
+  STIFF1, arrangement STIFF3, thứ tự OPOLY (CCW từ Q1) / IPOLY (CW) đều khớp production.
+- 3 điểm lệch so với bản production cần xử lý:
+  1. **STIFF2 (CyP/CyM/CzP/CzM)**: vbridge lấy từ `translated_outer` (boundary đã
+     simplify); production lấy từ **mesh vertices** (`section.mesh["vertices"]`). Cùng kết
+     quả với mặt cắt cạnh thẳng → nên đổi sang mesh vertices cho đúng 100% reference (an
+     toàn cả mặt cắt cong). Rủi ro thấp.
+  2. **Thiếu circle→DBUSER**: production `detect_circle` → xuất `DBUSER SR/P` cho mặt cắt
+     tròn/ống; vbridge luôn xuất GEN polygon. Ảnh hưởng **cọc D1500 HCM-CG** → nên port.
+  3. Ngưỡng lọc hole: vbridge `< 3` điểm, production `< 4`. Edge case nhỏ.
+- Lưu ý: example `examples/hcm_cg` hiện chỉ có section dạng stiffness (không polygon) nên
+  nhánh polygon mới được cover bằng `test_mct_generation.py` (rectangle), chưa chạy trên
+  dầm hộp thật.
+
+**Research sub girder (chi tiết → `projects/hcm_cg/SUB_GIRDER_RESEARCH.md`)**:
+- `*LINELANE` template: track **tĩnh** Eurocode = element-list + ECC ngang trên phần tử
+  có sẵn (KHÔNG cần sub girder). Sub girder 601..785 chỉ cần khi dùng Train Load Generator
+  (time-history **động**) — đúng strategy mặc định HCM-CG.
+- Đã xác nhận TÊN block MCT động (MIDAS manual): `*EIGEN-CTRL`, `*TFUNCTION`, `*THLDCASE`,
+  `*DYN-NLOAD` (+ `*MOVE-CTRL`/`*MVLDCASE` cho moving load tĩnh). Field layout vẫn cần file
+  mẫu (B1).
+
+**Liên kết research vào repo**: thêm trỏ tới `projects/hcm_cg/` (MODEL_UNDERSTANDING,
+SUB_GIRDER_RESEARCH, input_parameters.yaml) trong `CLAUDE.md` §8 + `PROJECT_STATUS.md`.
+
+**Lý do**: tránh repo lệch khi chuyển máy/agent; chốt rằng pipeline mặt cắt đang theo
+đúng bản đã validate; làm rõ điều kiện cần sub girder trước khi code v0.2 dynamic.
+
+**Blockers**:
+- B1 cập nhật: đã biết TÊN block time-history, vẫn cần file MCT mẫu Midas 2022 để lấy
+  field layout + cách Train Load Generator sinh `*DYN-NLOAD`/`*TFUNCTION`.
+
+---
+
 ## 2026-05-29 — Fix mypy, lock manifest schema, đổi tên test (P1-P3 follow-up)
 
 **Quyết định** (theo review user):

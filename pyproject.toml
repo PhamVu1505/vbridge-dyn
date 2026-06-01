@@ -49,6 +49,7 @@ sections = [
     "sectionproperties>=3.2",
     "shapely>=2.0",
     "chardet>=5.2",
+    "ezdxf>=1.1",
 ]
 dev = [
     "pytest>=8.2",

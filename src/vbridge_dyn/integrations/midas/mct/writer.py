@@ -252,6 +252,10 @@ def _append_section(
     cz = _section_half_depth(section)
     perimeter = 4.0 * (cy + cz)
     prefix = section.midas_offset or "CC"
+    warnings.append(
+        f"Section {section.id}: không có polygon/DXF → OPOLY chữ nhật xấp xỉ "
+        f"(±{cy:.3f}, ±{cz:.3f}) chỉ để hiển thị; STIFF dùng A/Iy/Iz/J đã nhập."
+    )
     lines.extend(
         [
             (
@@ -267,6 +271,8 @@ def _append_section(
                 f"{_num(-cy)}, {_num(cy)}, {_num(cy)}, {_num(-cy)}, "
                 f"{_num(cz)}, {_num(cz)}, {_num(-cz)}, {_num(-cz)}"
             ),
+            # OPOLY chữ nhật bao (±cy, ±cz) — GEN section bắt buộc có polygon mới hiển thị.
+            "OPOLY=" + ", ".join(_num(v) for v in (cy, cz, cy, -cz, -cy, -cz, -cy, cz)),
         ],
     )
 

@@ -29,6 +29,8 @@ def test_generate_midas_mct_from_init_template(tmp_path: Path) -> None:
     assert "*ELEMENT" in text
     assert "*MATERIAL" in text
     assert "*SECT-PSCVALUE" in text
+    # GEN section luôn phải có OPOLY (kể cả fallback chữ nhật) mới hiển thị trong Midas
+    assert "OPOLY=" in text
     assert "*CONSTRAINT" in text
     assert "   1, 111000, " in text
     assert "Bearings" not in text

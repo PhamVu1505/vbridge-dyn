@@ -21,6 +21,7 @@ from vbridge_dyn.core.schemas.groups import StructureGroup
 from vbridge_dyn.core.schemas.mass import ElementDistributedMass, NodalMass
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
 from vbridge_dyn.core.schemas.track import Track
+from vbridge_dyn.importers.dxf import read_section_polygon
 
 
 def _read_rows(ws: Worksheet) -> list[dict[str, Any]]:
@@ -78,8 +79,55 @@ def _coerce_point_pairs(raw: Any) -> list[tuple[float, float]]:
     return points
 
 
-def read_bridge_workbook(path: Path) -> tuple[Bridge, list[Track]]:
-    """Load bridge.xlsx → `(Bridge, list[Track])` (validate qua pydantic)."""
+def _resolve_path(base_dir: Path, raw: str) -> Path:
+    candidate = Path(raw)
+    return candidate if candidate.is_absolute() else (base_dir / candidate)
+
+
+def _geom_value(value: Any, has_geometry: bool) -> float:
+    """A/Iy/Iz/J: bắt buộc khi không có polygon; placeholder khi có (writer tự tính lại)."""
+    if value not in (None, ""):
+        return float(value)
+    if has_geometry:
+        return 1.0  # placeholder — build_polygon_section_lines tính lại từ polygon/DXF
+    msg = "Section thiếu A/Iy/Iz/J và không có polygon hoặc dxf_file để tính"
+    raise ValueError(msg)
+
+
+def _section_from_row(r: dict[str, Any], base_dir: Path) -> FrameSection:
+    outer = _parse_point_pairs(r.get("outer_boundary"))
+    holes = _parse_holes(r.get("holes"))
+    dxf_file = r.get("dxf_file")
+    if dxf_file:
+        polygon = read_section_polygon(_resolve_path(base_dir, str(dxf_file)))
+        outer = polygon.outer_boundary
+        holes = polygon.holes
+    has_geometry = outer is not None
+    return FrameSection(
+        id=str(r["id"]),
+        name=str(r.get("name") or r["id"]),
+        material_id=str(r["material_id"]),
+        A=_geom_value(r.get("A"), has_geometry),
+        Iy=_geom_value(r.get("Iy"), has_geometry),
+        Iz=_geom_value(r.get("Iz"), has_geometry),
+        J=_geom_value(r.get("J"), has_geometry),
+        Asy=float(r["Asy"]) if r.get("Asy") not in (None, "") else None,
+        Asz=float(r["Asz"]) if r.get("Asz") not in (None, "") else None,
+        kind=str(r.get("kind") or "girder"),
+        outer_boundary=outer,
+        holes=holes,
+        mesh_size=float(r.get("mesh_size") or 0.05),
+        midas_offset=str(r["midas_offset"]) if r.get("midas_offset") else None,
+    )
+
+
+def read_bridge_workbook(path: Path, base_dir: Path | None = None) -> tuple[Bridge, list[Track]]:
+    """Load bridge.xlsx → `(Bridge, list[Track])` (validate qua pydantic).
+
+    `base_dir` để resolve đường dẫn DXF tương đối trong cột `dxf_file` (mặc định
+    = thư mục chứa workbook).
+    """
+    base = base_dir if base_dir is not None else path.parent
     wb = load_workbook(path, data_only=True, read_only=True)
 
     def _rows(name: str) -> list[dict[str, Any]]:
@@ -129,25 +177,7 @@ def read_bridge_workbook(path: Path) -> tuple[Bridge, list[Track]]:
         for r in _rows("Materials")
     ]
 
-    sections = [
-        FrameSection(
-            id=str(r["id"]),
-            name=str(r.get("name") or r["id"]),
-            material_id=str(r["material_id"]),
-            A=float(r["A"]),
-            Iy=float(r["Iy"]),
-            Iz=float(r["Iz"]),
-            J=float(r["J"]),
-            Asy=float(r["Asy"]) if r.get("Asy") not in (None, "") else None,
-            Asz=float(r["Asz"]) if r.get("Asz") not in (None, "") else None,
-            kind=str(r.get("kind") or "girder"),
-            outer_boundary=_parse_point_pairs(r.get("outer_boundary")),
-            holes=_parse_holes(r.get("holes")),
-            mesh_size=float(r.get("mesh_size") or 0.05),
-            midas_offset=str(r["midas_offset"]) if r.get("midas_offset") else None,
-        )
-        for r in _rows("Sections")
-    ]
+    sections = [_section_from_row(r, base) for r in _rows("Sections")]
 
     supports = [
         Support(
