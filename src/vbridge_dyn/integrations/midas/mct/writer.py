@@ -16,8 +16,10 @@ from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.project import Project
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
 from vbridge_dyn.integrations.midas.mct.sections import (
+    CircleInfo,
     SectionPolygonUnavailableError,
     build_polygon_section_lines,
+    detect_circle,
 )
 
 _GRAVITY = 9.806
@@ -206,6 +208,63 @@ def _append_sections(
     maps: _MctIdMaps,
     warnings: list[str],
 ) -> None:
+    materials_by_id = {material.id: material for material in bridge.materials}
+    ordered = sorted(bridge.sections, key=lambda item: maps.section_ids[item.id])
+
+    dbuser: list[tuple[FrameSection, CircleInfo]] = []
+    pscvalue: list[FrameSection] = []
+    for section in ordered:
+        circle = detect_circle(section.outer_boundary, section.holes) if section.outer_boundary else None
+        if circle is not None:
+            dbuser.append((section, circle))
+        else:
+            pscvalue.append(section)
+
+    if dbuser:
+        _append_dbuser_sections(lines, dbuser, maps)
+    if pscvalue:
+        _append_pscvalue_sections(lines, pscvalue, materials_by_id, maps, warnings)
+
+
+def _append_dbuser_sections(
+    lines: list[str],
+    dbuser: list[tuple[FrameSection, CircleInfo]],
+    maps: _MctIdMaps,
+) -> None:
+    lines.extend(
+        [
+            "*SECTION    ; Section",
+            "; iSEC, TYPE, SNAME, [OFFSET], bSD, bWE, SHAPE, [DATA1], [DATA2]",
+            "; [DATA1] : 1, DB, NAME or 2, D1, D2, D3, D4, D5, D6",
+        ],
+    )
+    for section, circle in dbuser:
+        lines.append(_dbuser_line(section, maps.section_ids[section.id], circle))
+    lines.append("")
+
+
+def _dbuser_line(section: FrameSection, midas_id: int, circle: CircleInfo) -> str:
+    name = _text(section.name)
+    prefix = section.midas_offset or "CC"
+    if circle.kind == "P":
+        data = (
+            f"P  , 2, {_num(circle.diameter)}, {_num(circle.thickness)}, "
+            "0, 0, 0, 0, 0, 0, 0, 0"
+        )
+    else:
+        data = f"SR , 2, {_num(circle.diameter)}, 0, 0, 0, 0, 0, 0, 0, 0, 0"
+    return (
+        f"   {midas_id}, DBUSER, {name:<18}, {prefix}, 0, 0, 0, 0, 0, 0, YES, NO, {data}"
+    )
+
+
+def _append_pscvalue_sections(
+    lines: list[str],
+    sections: list[FrameSection],
+    materials_by_id: dict[str, Material],
+    maps: _MctIdMaps,
+    warnings: list[str],
+) -> None:
     lines.extend(
         [
             "*SECT-PSCVALUE    ; PSC Value, General Section, Composite PC, Composite General",
@@ -215,8 +274,7 @@ def _append_sections(
             ";      Y1, Y2, Y3, Y4, Z1, Z2, Z3, Z4",
         ],
     )
-    materials_by_id = {material.id: material for material in bridge.materials}
-    for section in sorted(bridge.sections, key=lambda item: maps.section_ids[item.id]):
+    for section in sections:
         _append_section(
             lines,
             section,

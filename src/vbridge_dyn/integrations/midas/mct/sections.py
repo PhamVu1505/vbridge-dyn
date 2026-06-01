@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import importlib
 import math
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
 
@@ -22,6 +23,62 @@ Point2D = tuple[float, float]
 
 class SectionPolygonUnavailableError(RuntimeError):
     """Raised when optional polygon section dependencies are not installed."""
+
+
+@dataclass(frozen=True)
+class CircleInfo:
+    """Mặt cắt tròn đặc (SR) hoặc ống (P) → xuất DBUSER thay vì GEN polygon."""
+
+    kind: Literal["SR", "P"]
+    diameter: float
+    thickness: float = 0.0
+
+
+def detect_circle(
+    outer: list[Point2D],
+    holes: list[list[Point2D]],
+    *,
+    cv_threshold: float = 0.02,
+) -> CircleInfo | None:
+    """Nhận diện mặt cắt tròn đặc/ống từ polygon đã rời rạc hóa.
+
+    Hệ số biến thiên bán kính (std/mean) < `cv_threshold` ⇒ tròn. Cần ≥ 8 đỉnh
+    (ARC chia 10° → 36 đỉnh là đủ). Port từ Converte_RM_to_Midas
+    `core/geometry.detect_circle`.
+    """
+    if len(outer) < 8:
+        return None
+    cx = sum(p[0] for p in outer) / len(outer)
+    cy = sum(p[1] for p in outer) / len(outer)
+    radii = [math.hypot(p[0] - cx, p[1] - cy) for p in outer]
+    mean_r = sum(radii) / len(radii)
+    if mean_r < 1e-6 or _coef_variation(radii, mean_r) > cv_threshold:
+        return None
+    diameter = round(2.0 * mean_r, 6)
+
+    # 1 lỗ tròn đồng tâm ⇒ ống (pipe)
+    if len(holes) == 1 and len(holes[0]) >= 8:
+        hole = holes[0]
+        hcx = sum(p[0] for p in hole) / len(hole)
+        hcy = sum(p[1] for p in hole) / len(hole)
+        hole_radii = [math.hypot(p[0] - hcx, p[1] - hcy) for p in hole]
+        mean_hr = sum(hole_radii) / len(hole_radii)
+        if mean_hr > 1e-6:
+            hole_cv = _coef_variation(hole_radii, mean_hr)
+            center_dist = math.hypot(hcx - cx, hcy - cy)
+            if hole_cv <= cv_threshold and center_dist < mean_r * 0.1:
+                thickness = round(mean_r - mean_hr, 6)
+                if thickness > 1e-6:
+                    return CircleInfo(kind="P", diameter=diameter, thickness=thickness)
+
+    if not holes:
+        return CircleInfo(kind="SR", diameter=diameter)
+    return None
+
+
+def _coef_variation(values: list[float], mean: float) -> float:
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(variance) / mean
 
 
 def build_polygon_section_lines(

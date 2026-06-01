@@ -69,6 +69,34 @@ def test_open_chain_only_raises(tmp_path: Path) -> None:
         read_section_polygon(path)
 
 
+def test_circle_entity_tessellated_by_angle(tmp_path: Path) -> None:
+    path = tmp_path / "circle.dxf"
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    msp.add_circle((0, 0), radius=0.75)  # D = 1.5 m
+    doc.saveas(str(path))
+
+    poly = read_section_polygon(path)  # arc_angle_deg mặc định 10° → 36 đoạn
+
+    assert len(poly.outer_boundary) == 36
+    radii = [(x * x + y * y) ** 0.5 for x, y in poly.outer_boundary]
+    assert max(radii) == pytest.approx(0.75, abs=1e-3)
+    assert min(radii) == pytest.approx(0.75, abs=1e-3)
+
+
+def test_arc_angle_override_changes_segment_count(tmp_path: Path) -> None:
+    path = tmp_path / "circle2.dxf"
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    doc.modelspace().add_circle((0, 0), radius=1.0)
+    doc.saveas(str(path))
+
+    poly = read_section_polygon(path, arc_angle_deg=30.0)  # 360/30 = 12 đoạn
+
+    assert len(poly.outer_boundary) == 12
+
+
 def test_largest_loop_is_outer(tmp_path: Path) -> None:
     path = tmp_path / "two.dxf"
     doc = ezdxf.new("R2010")

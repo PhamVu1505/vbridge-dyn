@@ -66,12 +66,15 @@ def read_section_polygon(
     *,
     layer: str | None = None,
     snap_tol: float = 1e-4,
+    arc_angle_deg: float = 10.0,
     arc_sagitta_m: float = 0.005,
 ) -> SectionPolygon:
     """Đọc 1 file DXF → `SectionPolygon` (bao ngoài + lỗ, đơn vị mét).
 
     `layer` None = lấy mọi layer (auto-chain). `snap_tol` (mét) = dung sai gộp
-    điểm trùng. `arc_sagitta_m` = sai số dây cung khi flatten cạnh cong.
+    điểm trùng. `arc_angle_deg` = góc mỗi đoạn khi chia `ARC`/`CIRCLE` (mặc định
+    10°, khớp Midas SPC). `arc_sagitta_m` = sai số dây cung khi flatten
+    `ELLIPSE`/`SPLINE`.
     """
     ezdxf = _load_ezdxf()
     if not dxf_path.exists():
@@ -90,7 +93,7 @@ def read_section_polygon(
     for entity in doc.modelspace():
         if layer is not None and getattr(entity.dxf, "layer", None) != layer:
             continue
-        segments.extend(_entity_segments(entity, scale, sagitta_dxf))
+        segments.extend(_entity_segments(entity, scale, sagitta_dxf, arc_angle_deg))
 
     if not segments:
         where = f"layer '{layer}'" if layer else "modelspace"
@@ -132,23 +135,68 @@ def _unit_scale(doc: Any) -> float:
     return _INSUNITS_TO_M.get(insunits, 1.0)
 
 
-def _entity_segments(entity: Any, scale: float, sagitta_dxf: float) -> list[_Segment]:
+def _entity_segments(
+    entity: Any,
+    scale: float,
+    sagitta_dxf: float,
+    arc_angle_deg: float,
+) -> list[_Segment]:
     """Quy 1 entity DXF về list đoạn thẳng (tọa độ đã đổi sang mét)."""
     etype = entity.dxftype()
     try:
         if etype == "LINE":
             return [(_pt(entity.dxf.start, scale), _pt(entity.dxf.end, scale))]
-        if etype in {"ARC", "CIRCLE", "ELLIPSE", "SPLINE"}:
-            pts = [_pt(p, scale) for p in entity.flattening(sagitta_dxf)]
-            return _chain(pts)
+        if etype == "ARC":
+            return _chain(
+                _arc_points(
+                    entity.dxf.center,
+                    entity.dxf.radius,
+                    entity.dxf.start_angle,
+                    entity.dxf.end_angle,
+                    arc_angle_deg,
+                    scale,
+                )
+            )
+        if etype == "CIRCLE":
+            return _chain(
+                _arc_points(entity.dxf.center, entity.dxf.radius, 0.0, 360.0, arc_angle_deg, scale)
+            )
+        if etype in {"ELLIPSE", "SPLINE"}:
+            return _chain([_pt(p, scale) for p in entity.flattening(sagitta_dxf)])
         if etype in {"LWPOLYLINE", "POLYLINE", "INSERT"}:
             segments: list[_Segment] = []
             for sub in entity.virtual_entities():
-                segments.extend(_entity_segments(sub, scale, sagitta_dxf))
+                segments.extend(_entity_segments(sub, scale, sagitta_dxf, arc_angle_deg))
             return segments
     except Exception:  # entity lỗi/không hỗ trợ → bỏ qua, không chặn cả file
         return []
     return []  # TEXT, MTEXT, DIMENSION, POINT, SOLID, HATCH, ... → bỏ qua
+
+
+def _arc_points(
+    center: Any,
+    radius: float,
+    start_deg: float,
+    end_deg: float,
+    angle_deg: float,
+    scale: float,
+) -> list[Point2D]:
+    """Chia cung tròn thành đỉnh theo bước góc `angle_deg` (DXF: cung quay CCW)."""
+    cx, cy, r = float(center.x), float(center.y), float(radius)
+    sweep = (float(end_deg) - float(start_deg)) % 360.0
+    if sweep <= 1e-9:
+        sweep = 360.0
+    n = max(1, math.ceil(sweep / angle_deg))
+    points: list[Point2D] = []
+    for k in range(n + 1):
+        ang = math.radians(start_deg + sweep * k / n)
+        points.append(
+            (
+                round((cx + r * math.cos(ang)) * scale, 9),
+                round((cy + r * math.sin(ang)) * scale, 9),
+            )
+        )
+    return points
 
 
 def _pt(vec: Any, scale: float) -> Point2D:

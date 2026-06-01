@@ -33,11 +33,12 @@
 - [x] Verify pipeline mặt cắt khớp bản đã validate (Converte `src/core/geometry.py`, Euclidean STIFF3 100% match 38 SPC)
 - [x] Research sub girder cho tải tàu + xác nhận block keyword time-history (→ `projects/hcm_cg/`)
 - [x] **DXF section importer** (`importers/dxf/`, cột `dxf_file`, auto-chain) + vá writer fallback OPOLY → mọi GEN section hiển thị trong Midas (verify trên MG_01.dxf)
+- [x] **ARC/CIRCLE chia 10°** trong DXF reader + **`detect_circle`→`DBUSER SR/P`** (cọc D1500) trong writer
 - [ ] Mở rộng writer: `*STLDCASE`/`*SELFWEIGHT`/`*BEAMLOAD` (DW) + `*EIGEN-CTRL` (modal)
-- [ ] Port `detect_circle` → `DBUSER SR/P` (cọc D1500); đổi STIFF2 sang mesh vertices cho khớp 100% reference; hỗ trợ ARC/bulge trong DXF
+- [ ] Đổi STIFF2 sang mesh vertices cho khớp 100% reference; hỗ trợ LWPOLYLINE bulge cong
 - [ ] Dựng model 5 nhịp HCM-CG thật từ `projects/hcm_cg/input_parameters.yaml`
 - [ ] Dynamic blocks `*TFUNCTION`/`*THLDCASE`/`*DYN-NLOAD` — chờ field layout từ file mẫu (B1)
-- [x] Test: **43/43 PASS** (33 → +MCT gen/polygon/excel → +DXF reader & fallback OPOLY)
+- [x] Test: **46/46 PASS** (33 → +MCT gen/polygon/excel → +DXF reader & fallback OPOLY → +ARC 10° & circle DBUSER)
 
 ---
 
@@ -89,6 +90,8 @@
 
 ## Recent changes
 
+- **2026-06-01** (chiều 2): ARC/CIRCLE chia 10° trong DXF reader + `detect_circle`→
+  `DBUSER SR/P` (cọc tròn). 46/46 tests. Checkpoint trước đó: commit `38bb43a`.
 - **2026-06-01** (chiều): DXF section importer (`importers/dxf/`, cột `dxf_file`,
   auto-chain) + vá writer fallback OPOLY → mặt cắt hiển thị được trong Midas; verify
   trên `MG_01.dxf`. 43/43 tests.

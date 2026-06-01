@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-06-01 — ARC chia theo góc (10°) + detect_circle→DBUSER
+
+**Quyết định** (theo yêu cầu owner sau khi xác nhận MG_01 hiển thị đúng trong Midas):
+chia ARC mặc định góc 10°; mặt cắt tròn xuất DBUSER. Đã commit checkpoint `38bb43a`
+TRƯỚC khi làm 2 việc này.
+
+**Đã làm**:
+- `importers/dxf/section_reader.py`: `ARC`/`CIRCLE` chia theo **bước góc**
+  (`arc_angle_deg`, mặc định **10°** — khớp Midas SPC) thay cho sagitta;
+  `ELLIPSE`/`SPLINE` vẫn flatten theo sagitta. CIRCLE → vòng kín 36 đỉnh.
+- `integrations/midas/mct/sections.py`: thêm `detect_circle()` + `CircleInfo` (port
+  từ Converte `core/geometry`): hệ số biến thiên bán kính < 2% ⇒ tròn đặc (SR) /
+  ống (P, 1 lỗ tròn đồng tâm).
+- `integrations/midas/mct/writer.py`: tách section thành **2 khối** — `*SECTION`
+  (DBUSER SR/P cho mặt cắt tròn, vd cọc D1500) + `*SECT-PSCVALUE` (GEN polygon còn lại).
+- Tests: +3 (circle chia 10° = 36 đỉnh, override góc 30° = 12 đỉnh, circular section
+  → DBUSER SR). **46/46 PASS**, ruff + mypy strict sạch.
+
+**Verify**: CIRCLE D1.5 trong DXF → 36 đỉnh → `detect_circle` ra SR D≈1.5 → dòng
+`*SECTION … DBUSER … SR`. MG_01 dầm hộp vẫn ra `*SECT-PSCVALUE` + OPOLY (KHÔNG nhận
+nhầm tròn).
+
+**Follow-up**: đổi STIFF2 sang mesh vertices; hỗ trợ LWPOLYLINE có bulge cong.
+
+---
+
 ## 2026-06-01 — DXF section importer + vá writer fallback OPOLY
 
 **Bối cảnh**: Midas không hiển thị mặt cắt vì writer phát `SHAPE=GEN` mà **thiếu

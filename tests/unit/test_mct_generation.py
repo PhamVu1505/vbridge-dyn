@@ -71,3 +71,39 @@ def test_polygon_section_writer_matches_converter_shape_contract() -> None:
     assert lines[0].startswith("SECT=   7, VALUE")
     assert lines[1].startswith("4.0000,")
     assert len([line for line in lines if line.startswith("OPOLY=")]) == 1
+
+
+def test_circular_section_emits_dbuser(tmp_path: Path) -> None:
+    import math
+
+    from vbridge_dyn.core.schemas.bridge import Bridge
+    from vbridge_dyn.core.schemas.geometry import Element, Node
+    from vbridge_dyn.core.schemas.project import Project, ProjectMeta
+    from vbridge_dyn.integrations.midas.mct.writer import write_base_model_mct
+
+    n = 36
+    radius = 0.75  # D = 1.5 m (cọc khoan nhồi)
+    circle = [
+        (round(radius * math.cos(2 * math.pi * k / n), 6), round(radius * math.sin(2 * math.pi * k / n), 6))
+        for k in range(n)
+    ]
+    section = FrameSection(
+        id="PILE", name="Coc D1500", material_id="C30", A=1.0, Iy=1.0, Iz=1.0, J=1.0,
+        outer_boundary=circle, kind="pier",
+    )
+    bridge = Bridge(
+        nodes=[Node(id=1, x=0, y=0, z=0), Node(id=2, x=0, y=0, z=-10)],
+        elements=[Element(id=1, type="BEAM", n1=1, n2=2, material_id="C30", section_id="PILE")],
+        materials=[Material(id="C30", name="C30", E=3.0e10, rho=2500.0, kind="CONC")],
+        sections=[section],
+    )
+    project = Project(meta=ProjectMeta(name="pile"), bridge=bridge)
+
+    out = tmp_path / "pile.mct"
+    write_base_model_mct(project, out)
+    text = out.read_text(encoding="utf-8")
+
+    assert "*SECTION" in text
+    assert "DBUSER" in text
+    assert "SR ," in text  # solid round, không phải GEN polygon
+    assert "*SECT-PSCVALUE" not in text  # chỉ có mặt cắt tròn → không có khối PSC
