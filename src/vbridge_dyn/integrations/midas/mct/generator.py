@@ -33,7 +33,7 @@ def generate_midas_mct(project: Project, project_folder: Path) -> MctGenerationR
     output_dir.mkdir(parents=True, exist_ok=True)
 
     mct_path = output_dir / "model_base.mct"
-    warnings = write_base_model_mct(project, mct_path)
+    warnings = write_base_model_mct(project, mct_path, project_folder=project_folder)
 
     manifest = _build_manifest(project, project_folder=project_folder, mct_file=mct_path.name)
     manifest_path = output_dir / "generation_manifest.json"

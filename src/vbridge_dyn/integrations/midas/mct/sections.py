@@ -34,6 +34,14 @@ class CircleInfo:
     thickness: float = 0.0
 
 
+@dataclass(frozen=True)
+class RectangleInfo:
+    """Mặt cắt chữ nhật đặc → xuất section built-in SB."""
+
+    width_y: float
+    depth_z: float
+
+
 def detect_circle(
     outer: list[Point2D],
     holes: list[list[Point2D]],
@@ -74,6 +82,35 @@ def detect_circle(
     if not holes:
         return CircleInfo(kind="SR", diameter=diameter)
     return None
+
+
+def detect_solid_rectangle(
+    outer: list[Point2D],
+    holes: list[list[Point2D]],
+    *,
+    tol: float = 1e-6,
+) -> RectangleInfo | None:
+    """Nhận diện hình chữ nhật đặc, cạnh song song trục local Y-Z."""
+    if holes or len(outer) != 4:
+        return None
+    y_values = [point[0] for point in outer]
+    z_values = [point[1] for point in outer]
+    y_min, y_max = min(y_values), max(y_values)
+    z_min, z_max = min(z_values), max(z_values)
+    corners = {
+        (round(y_min, 6), round(z_min, 6)),
+        (round(y_min, 6), round(z_max, 6)),
+        (round(y_max, 6), round(z_min, 6)),
+        (round(y_max, 6), round(z_max, 6)),
+    }
+    actual = {(round(y, 6), round(z, 6)) for y, z in outer}
+    if actual != corners:
+        return None
+    width_y = y_max - y_min
+    depth_z = z_max - z_min
+    if width_y <= tol or depth_z <= tol:
+        return None
+    return RectangleInfo(width_y=round(width_y, 6), depth_z=round(depth_z, 6))
 
 
 def _coef_variation(values: list[float], mean: float) -> float:
@@ -176,15 +213,13 @@ def build_polygon_section_lines(
 
     translated_outer = _adjust_to_counterclockwise(translated_outer_raw, quad_pts[0])
     translated_holes = [_adjust_hole_points(hole) for hole in translated_holes_raw]
-    translated_outer = _simplify_polygon(translated_outer)
-    translated_holes = [_simplify_polygon(hole) if hole else hole for hole in translated_holes]
 
-    y_values = [point[0] for point in translated_outer]
-    z_values = [point[1] for point in translated_outer]
-    y_max = max(y_values)
-    y_min = min(y_values)
-    z_max = max(z_values)
-    z_min = min(z_values)
+    y_max, y_min, z_max, z_min = _translated_mesh_extents(
+        section_model,
+        cy,
+        cz,
+        section.outer_boundary,
+    )
     outer_perimeter = _calculate_perimeter(translated_outer)
     holes_perimeter = sum(_calculate_perimeter(hole) for hole in translated_holes)
 
@@ -221,6 +256,47 @@ def build_polygon_section_lines(
         if hole:
             lines.append("IPOLY=" + _format_points(hole))
     return lines
+
+
+def build_tapered_section_lines(
+    section: FrameSection,
+    start_section: FrameSection,
+    end_section: FrameSection,
+    material: Material,
+    midas_id: int,
+) -> list[str]:
+    """Build a Midas VALUE/GEN tapered section from two polygon sections."""
+    start_lines = build_polygon_section_lines(start_section, material, midas_id)
+    end_lines = build_polygon_section_lines(end_section, material, midas_id)
+    prefix = _extract_section_prefix(start_lines[0])
+    lines = [
+        (
+            f"SECT={midas_id:>4}, TAPERED   , {_text(section.name)[:20]:<20}, {prefix}, "
+            "0, 0, 0, 0, 0, 0, 0, 0, YES, NO, GEN, 1, 1, YES"
+        ),
+    ]
+    lines.extend(start_lines[1:4])
+    lines.extend(end_lines[1:4])
+    lines.extend(_tapered_polygon_lines("YES", start_lines[4:]))
+    lines.extend(_tapered_polygon_lines("NO", end_lines[4:]))
+    return lines
+
+
+def _extract_section_prefix(line: str) -> str:
+    parts = [part.strip() for part in line.split(",")]
+    if len(parts) > 3 and parts[3]:
+        return parts[3]
+    return "CC"
+
+
+def _tapered_polygon_lines(label: str, lines: list[str]) -> list[str]:
+    out: list[str] = []
+    for line in lines:
+        if line.startswith("OPOLY="):
+            out.append("OPOLY=" + label + "," + line.removeprefix("OPOLY="))
+        elif line.startswith("IPOLY="):
+            out.append("IPOLY=" + label + "," + line.removeprefix("IPOLY="))
+    return out
 
 
 def _load_section_tools() -> dict[str, Any]:
@@ -279,6 +355,45 @@ def _calculate_perimeter(points: list[Point2D]) -> float:
         previous = points[i - 1]
         total += math.hypot(point[0] - previous[0], point[1] - previous[1])
     return total
+
+
+def _translated_mesh_extents(
+    section_model: Any,
+    cy: float,
+    cz: float,
+    fallback_points: list[Point2D],
+) -> tuple[float, float, float, float]:
+    """Lấy Cy/Cz extents từ mesh vertices để khớp Midas SPC/reference pipeline."""
+    vertices = _mesh_vertices(section_model)
+    points = vertices if vertices else fallback_points
+    translated = [(float(y) - cy, float(z) - cz) for y, z in points]
+    if not translated:
+        return 0.0, 0.0, 0.0, 0.0
+    y_values = [point[0] for point in translated]
+    z_values = [point[1] for point in translated]
+    return (
+        round(max(y_values), 6),
+        round(min(y_values), 6),
+        round(max(z_values), 6),
+        round(min(z_values), 6),
+    )
+
+
+def _mesh_vertices(section_model: Any) -> list[Point2D]:
+    mesh = getattr(section_model, "mesh", None)
+    if not isinstance(mesh, dict):
+        return []
+    raw_vertices = mesh.get("vertices")
+    if raw_vertices is None:
+        return []
+
+    vertices: list[Point2D] = []
+    try:
+        for vertex in raw_vertices:
+            vertices.append((float(vertex[0]), float(vertex[1])))
+    except (IndexError, TypeError, ValueError):
+        return []
+    return vertices
 
 
 def _translate_points(points: list[Point2D], cy: float, cz: float) -> list[Point2D]:

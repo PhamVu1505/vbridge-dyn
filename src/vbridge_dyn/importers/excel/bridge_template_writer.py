@@ -5,13 +5,17 @@ Sheets:
 - Elements     : id, type, n1, n2, material_id, section_id, structure_group
 - Materials    : id, name, kind, grade, E, nu, rho, alpha_T, damping_ratio
 - Sections     : id, name, material_id, A, Iy, Iz, J, Asy, Asz, kind,
-                 outer_boundary, holes, mesh_size, midas_offset
+                 outer_boundary, holes, mesh_size, midas_offset, dxf_file, dxf_layer,
+                 dxf_axis_order,
+                 taper_start_section_id, taper_end_section_id
 - Supports     : node_id, Ux, Uy, Uz, Rx, Ry, Rz, boundary_group
-- ElasticLinks : id, n1, n2, kx, ky, kz, krx, kry, krz, boundary_group
+- ElasticLinks : id, n1, n2, kx, ky, kz, krx, kry, krz, boundary_group,
+                 dof_mask, angle, sd_i, sd_j
 - RigidLinks   : id, master, slaves, dof_mask, boundary_group
 - NodalMasses  : node_id, m, Ixx, Iyy, Izz
 - DistributedMasses : target_group, mass_per_length, note
 - StructureGroups : id, name, element_ids, node_ids
+- BoundaryGroups : id, name
 - Tracks       : id, name, centerline_y, rail_height_above_deck,
                  ballast_type, rail_spacing_trans, sleeper_spacing_long
 
@@ -144,13 +148,18 @@ def write_bridge_template(path: Path) -> None:
             "mesh_size",
             "midas_offset",
             "dxf_file",
+            "dxf_layer",
+            "dxf_axis_order",
+            "taper_start_section_id",
+            "taper_end_section_id",
         ],
     )
     _add_note(
         ws,
         3,
         "Note: hình mặt cắt nhập 1 trong 2 cách — (a) dxf_file trỏ file DXF "
-        "(vd dxf/MG_01.dxf, đường bao+lỗ tự trích, A/Iy/Iz/J để trống); hoặc "
+        "(vd dxf/MG_01.dxf, có thể chỉ định dxf_layer và dxf_axis_order=xy/yx, "
+        "đường bao+lỗ tự trích, A/Iy/Iz/J để trống); hoặc "
         "(b) outer_boundary JSON [[y,z],...] + holes JSON [[[y,z],...],...].",
     )
     ws.cell(row=2, column=1, value="MainGirder")
@@ -186,7 +195,25 @@ def write_bridge_template(path: Path) -> None:
 
     # ElasticLinks
     ws = wb.create_sheet("ElasticLinks")
-    _set_header(ws, ["id", "n1", "n2", "kx", "ky", "kz", "krx", "kry", "krz", "boundary_group"])
+    _set_header(
+        ws,
+        [
+            "id",
+            "n1",
+            "n2",
+            "kx",
+            "ky",
+            "kz",
+            "krx",
+            "kry",
+            "krz",
+            "boundary_group",
+            "dof_mask",
+            "angle",
+            "sd_i",
+            "sd_j",
+        ],
+    )
 
     # RigidLinks
     ws = wb.create_sheet("RigidLinks")
@@ -212,6 +239,10 @@ def write_bridge_template(path: Path) -> None:
     ws.cell(row=2, column=2, value="Main Girder")
     ws.cell(row=3, column=1, value="SubGirder")
     ws.cell(row=3, column=2, value="Sub Girder (dynamic investigation)")
+
+    # BoundaryGroups
+    ws = wb.create_sheet("BoundaryGroups")
+    _set_header(ws, ["id", "name"])
 
     # Tracks
     ws = wb.create_sheet("Tracks")

@@ -123,10 +123,7 @@ def _load_ezdxf() -> Any:
     try:
         return importlib.import_module("ezdxf")
     except ModuleNotFoundError as exc:
-        msg = (
-            "Cần cài optional dependency `vbridge-dyn[sections]` (ezdxf) "
-            "để đọc mặt cắt từ DXF"
-        )
+        msg = "Cần cài optional dependency `vbridge-dyn[sections]` (ezdxf) để đọc mặt cắt từ DXF"
         raise DxfUnavailableError(msg) from exc
 
 
@@ -163,7 +160,9 @@ def _entity_segments(
             )
         if etype in {"ELLIPSE", "SPLINE"}:
             return _chain([_pt(p, scale) for p in entity.flattening(sagitta_dxf)])
-        if etype in {"LWPOLYLINE", "POLYLINE", "INSERT"}:
+        if etype == "LWPOLYLINE":
+            return _lwpolyline_segments(entity, scale, arc_angle_deg)
+        if etype in {"POLYLINE", "INSERT"}:
             segments: list[_Segment] = []
             for sub in entity.virtual_entities():
                 segments.extend(_entity_segments(sub, scale, sagitta_dxf, arc_angle_deg))
@@ -199,8 +198,61 @@ def _arc_points(
     return points
 
 
+def _lwpolyline_segments(entity: Any, scale: float, arc_angle_deg: float) -> list[_Segment]:
+    """Tách LWPOLYLINE, gồm cả bulge cong, thành các đoạn thẳng."""
+    try:
+        points = [(float(x), float(y), float(bulge)) for x, y, bulge in entity.get_points("xyb")]
+    except Exception:
+        return []
+    if len(points) < 2:
+        return []
+
+    is_closed = bool(getattr(entity, "closed", False)) or bool(getattr(entity, "is_closed", False))
+    pairs = [(points[i], points[i + 1]) for i in range(len(points) - 1)]
+    if is_closed:
+        pairs.append((points[-1], points[0]))
+
+    segments: list[_Segment] = []
+    for start, end in pairs:
+        start_xy = (start[0], start[1])
+        end_xy = (end[0], end[1])
+        bulge = start[2]
+        if abs(bulge) < 1e-12:
+            segments.append((_pt_xy(start_xy, scale), _pt_xy(end_xy, scale)))
+            continue
+        segments.extend(_chain(_bulge_points(start_xy, end_xy, bulge, arc_angle_deg, scale)))
+    return segments
+
+
+def _bulge_points(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    bulge: float,
+    arc_angle_deg: float,
+    scale: float,
+) -> list[Point2D]:
+    """Chia 1 cạnh LWPOLYLINE có bulge thành các đỉnh theo bước góc."""
+    try:
+        ezdxf_math = importlib.import_module("ezdxf.math")
+        center, start_angle, end_angle, radius = ezdxf_math.bulge_to_arc(start, end, bulge)
+    except Exception:
+        return [_pt_xy(start, scale), _pt_xy(end, scale)]
+    return _arc_points(
+        center,
+        float(radius),
+        math.degrees(float(start_angle)),
+        math.degrees(float(end_angle)),
+        arc_angle_deg,
+        scale,
+    )
+
+
 def _pt(vec: Any, scale: float) -> Point2D:
     return (round(float(vec.x) * scale, 9), round(float(vec.y) * scale, 9))
+
+
+def _pt_xy(point: tuple[float, float], scale: float) -> Point2D:
+    return (round(point[0] * scale, 9), round(point[1] * scale, 9))
 
 
 def _chain(points: list[Point2D]) -> list[_Segment]:

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from vbridge_dyn.core.schemas.analysis import AnalysisOptions, VelocityRange
 from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.result_station import ResultStation
+from vbridge_dyn.core.schemas.tendon import PrestressConfig
 from vbridge_dyn.core.schemas.track import Track
 from vbridge_dyn.core.schemas.train import TrainModel
 
@@ -61,6 +62,23 @@ class TargetMidasConfig(BaseModel):
     moving_load_strategy: Literal["time_history_function", "rail_track_analysis"] = (
         "time_history_function"
     )
+    time_dependent_concrete: "TimeDependentConcreteConfig" = Field(
+        default_factory=lambda: TimeDependentConcreteConfig()
+    )
+
+
+class TimeDependentConcreteConfig(BaseModel):
+    """Midas CEB-FIP time-dependent material settings for concrete."""
+
+    enabled: bool = False
+    code: Literal["CEB"] = "CEB"
+    elasticity_code: Literal["CEB-FIP"] = "CEB-FIP"
+    relative_humidity_percent: float = Field(default=70.0, gt=0, le=100)
+    notional_size: float = Field(default=1.0, gt=0)
+    cement_type: Literal["NR", "RS", "SL"] = "NR"
+    age_days: float = Field(default=3.0, gt=0)
+    include_materials: list[str] = Field(default_factory=list)
+    strengths: dict[str, float] = Field(default_factory=dict)
 
 
 class TargetRMBridgeConfig(BaseModel):
@@ -113,6 +131,7 @@ class Project(BaseModel):
     trains: list[TrainModel] = Field(default_factory=list)
     velocity_range: VelocityRange = Field(default_factory=VelocityRange)
     analysis: AnalysisOptions = Field(default_factory=AnalysisOptions)
+    prestress: PrestressConfig = Field(default_factory=PrestressConfig)
     result_stations: list[ResultStation] = Field(default_factory=list)
 
     targets: Targets = Field(default_factory=Targets)

@@ -50,6 +50,12 @@ docs/_build/
 # --- Project-specific ---
 # Generated MCT files (per project workspace, not in repo)
 **/generated/midas/*.mct
+**/generated/midas/*.mcb
+**/generated/midas/*.CA1
+**/generated/midas/*.CA2
+**/generated/midas/*.CEIG
+**/generated/midas/*.OUT
+**/generated/midas/*.TD1
 **/generated/midas/generation_manifest.json
 **/generated/rm_bridge/*.tcl
 **/solver_outputs/**/*.csv

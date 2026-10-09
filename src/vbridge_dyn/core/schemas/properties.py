@@ -56,9 +56,22 @@ class FrameSection(BaseModel):
         default=None,
         description="Override offset prefix Midas. None = tự detect từ centroid.",
     )
+    taper_start_section_id: str | None = Field(
+        default=None,
+        description="Section tại đầu i cho mặt cắt tapered.",
+    )
+    taper_end_section_id: str | None = Field(
+        default=None,
+        description="Section tại đầu j cho mặt cắt tapered.",
+    )
 
     @model_validator(mode="after")
     def _check_polygon_inputs(self) -> "FrameSection":
+        has_taper_start = self.taper_start_section_id not in (None, "")
+        has_taper_end = self.taper_end_section_id not in (None, "")
+        if has_taper_start != has_taper_end:
+            msg = f"Section '{self.id}' tapered phải có đủ start và end section"
+            raise ValueError(msg)
         if self.outer_boundary is not None and len(self.outer_boundary) < 3:
             msg = f"Section '{self.id}' outer_boundary phải có ít nhất 3 điểm"
             raise ValueError(msg)

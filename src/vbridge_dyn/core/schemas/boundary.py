@@ -34,6 +34,17 @@ class ElasticLink(BaseModel):
     kry: float = Field(ge=0)
     krz: float = Field(ge=0)
     boundary_group: str = ""
+    dof_mask: str = Field(default="111111", min_length=6, max_length=6)
+    angle: float = 0.0
+    sd_i: float = 0.5
+    sd_j: float = 0.5
+
+    @model_validator(mode="after")
+    def _check_dof_mask(self) -> "ElasticLink":
+        if any(c not in "01" for c in self.dof_mask):
+            msg = f"ElasticLink.dof_mask phải gồm 0/1 (6 ký tự): {self.dof_mask}"
+            raise ValueError(msg)
+        return self
 
 
 class RigidLink(BaseModel):

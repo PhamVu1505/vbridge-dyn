@@ -45,6 +45,12 @@ class Bridge(BaseModel):
             if s.material_id not in mat_ids:
                 msg = f"Section '{s.id}' tham chiếu material không tồn tại: '{s.material_id}'"
                 raise ValueError(msg)
+            for taper_ref in (s.taper_start_section_id, s.taper_end_section_id):
+                if taper_ref and taper_ref not in sect_ids:
+                    msg = (
+                        f"Section '{s.id}' tham chiếu tapered section không tồn tại: '{taper_ref}'"
+                    )
+                    raise ValueError(msg)
 
         # Elements phải tham chiếu material + section + 2 node hợp lệ
         for e in self.elements:

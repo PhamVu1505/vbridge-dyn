@@ -39,7 +39,7 @@ velocity_range:
   refine_near_resonance: true
 
 analysis:
-  n_modes: 30
+  n_modes: 70
   fmax_target_hz: null      # null = auto: max(30 Hz, 1.5·n0, n3)
   damping:
     standard: tcvn13594_3_table_18

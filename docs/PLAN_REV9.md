@@ -1,7 +1,7 @@
 # VBridge-Dyn — Phần mềm tự động hóa phân tích động cầu HSR
 
 > **Vai trò**: lớp tự động hóa (modeling + case setup + report) cho **Midas Civil** (MVP) và **RM Bridge** (Phase 2), không có solver nội bộ.
-> Working dir: `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges`
+> Working dir: `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao`
 > **Phiên bản plan**: rev9 — thêm section **Project tracking files** (4 file md ở root repo: `README.md`, `CLAUDE.md`, `PROJECT_STATUS.md`, `TASK_LOG.md`) để dự án dài không mất context giữa các phiên Claude/người làm. rev8 — chốt MVP (Midas Civil **2022** mặc định; loại Civil NX/API khỏi MVP roadmap; runner.py optional, không nằm trong acceptance; thêm `generation_manifest.json` + `export_instructions.md` + `result_export_template.xlsx` trong generated/; fix các inconsistency: TCVN checks, 13 mục, grouped_by_train naming `case_th_hslm_a1.mct`, UI status sửa số file; tiêu chuẩn TCVN 13594-4:2022 mặc định).
 >
 > **MVP chốt**: (1) Sinh `.mct` cho **MIDAS Civil 2022**. (2) User import/run/export CSV **thủ công**. (3) App ingest CSV → tìm case bất lợi → vẽ envelope/time-history → xuất PDF tiếng Việt. (4) **Không API, không NX, không solver nội bộ, không RM thật** trong MVP.
@@ -40,9 +40,9 @@ Phát triển phần mềm Windows desktop (UI/báo cáo tiếng Việt) để *
 
 | Nguồn | Vai trò |
 |---|---|
-| `refer\202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (575 trang, bản tính HSR Hồ Chí Minh - Cần Giờ, bước Thiết kế kỹ thuật) | **Cốt lõi**: liệt kê đầy đủ bộ TCVN 13594 áp dụng, các tải LM71/SW/0/SW/2/HSLM, hệ số tổ hợp ψ0/ψ1/ψ2 (TCVN 13594-3 Bảng A.1), Bảng 18 damping, mô hình 5 nhịp Main+Sub Girder cho dynamic investigation, output sheets Midas (UHRI 301_I..316_J + Bending/Shear/Torsional/Stress/Crack/Tendon) |
+| `3_ho_so_tham_khao\202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (575 trang, bản tính HSR Hồ Chí Minh - Cần Giờ, bước Thiết kế kỹ thuật) | **Cốt lõi**: liệt kê đầy đủ bộ TCVN 13594 áp dụng, các tải LM71/SW/0/SW/2/HSLM, hệ số tổ hợp ψ0/ψ1/ψ2 (TCVN 13594-3 Bảng A.1), Bảng 18 damping, mô hình 5 nhịp Main+Sub Girder cho dynamic investigation, output sheets Midas (UHRI 301_I..316_J + Bending/Shear/Torsional/Stress/Crack/Tendon) |
 | `docs\[Final]Dynamic Analysis for High Speed Two (HS2).pdf` (40 trang MIDAS UK Tutorial HS2) | Mapping Eurocode → MCT directives, ERRI time-step, damping table, HSLM, acc check, flowchart NA.12, benchmark |
-| `refer\KD_Railway_software\Snapshot\*.JPG` | UX inspiration (panels, train models definition, options) |
+| `3_ho_so_tham_khao\KD_Railway_software\Snapshot\*.JPG` | UX inspiration (panels, train models definition, options) |
 | github.com/lekhuong/KD-Railway | File format `.trmd`, `SectionData.csv`, `VelocitiesData.csv` |
 
 ### Tiêu chuẩn áp dụng (theo bản tính HSR HCM-CG)
@@ -776,7 +776,7 @@ repo. Đến lúc đó V03-V05/V09 sẽ được nâng cấp lên Hard benchmark
 | V03 | KD-Railway Chapter6_Example | KD-Railway output CSV (chưa có file model) | Xu hướng peak velocity + critical speed approximate + report layout đúng |
 | V04 | HS2 case eigenvalues (concrete C45) | docs HS2 PDF p.30 (chỉ PDF, không có file model) | f_1 cùng order (~6 Hz), N modes đầu cùng chiều biến |
 | V05 | HS2 envelope HSLM-A1..A10 | docs HS2 PDF p.36 (chỉ PDF) | Peak velocity ≈ ±20 km/h; accel trend qualitative giống |
-| **V09** | **HSR HCM-CG typical span** | `refer/202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (Midas Civil 2025, HSLM-A, ξ=1%, dt=0.001 s, Vtk=350 km/h, Vmax=420 km/h, **f_bending ≈ 5.9312 Hz**, **f_torsion ≈ 16.35 Hz**, **Vcr ≈ 384.34 km/h**) | f_bending cùng order (~6 Hz), f_torsion cùng order (~16 Hz), Vcr ±20 km/h, report layout đầy đủ 13 mục |
+| **V09** | **HSR HCM-CG typical span** | `3_ho_so_tham_khao/202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (Midas Civil 2025, HSLM-A, ξ=1%, dt=0.001 s, Vtk=350 km/h, Vmax=420 km/h, **f_bending ≈ 5.9312 Hz**, **f_torsion ≈ 16.35 Hz**, **Vcr ≈ 384.34 km/h**) | f_bending cùng order (~6 Hz), f_torsion cùng order (~16 Hz), Vcr ±20 km/h, report layout đầy đủ 13 mục |
 
 ### CI chính sách
 

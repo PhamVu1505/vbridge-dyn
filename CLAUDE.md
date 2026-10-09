@@ -9,6 +9,65 @@
 
 ---
 
+## 0. Current Sprint
+
+**Track đang chạy (từ 2026-09-11)**: **mô hình đối chứng cầu SB29** (ngoài repo)
+— `1_du_an/SB29_HNQN/`. Cầu vượt sông Hốt Km116+097,
+tuyến ĐSTĐC Hà Nội–Quảng Ninh, 40,85+64+40,85 m. Trạng thái + việc tiếp theo:
+[`docs/02_TIEN_DO_VA_VIEC_TIEP_THEO.md`](../1_du_an/SB29_HNQN/docs/02_TIEN_DO_VA_VIEC_TIEP_THEO.md).
+
+**Trạng thái (2026-09-12)**: mô hình tĩnh tổng thể **đã chạy sạch, 0 warning**
+trên cả 6 loại phân tích (static / moving load / settlement / eigenvalue /
+response spectrum ×2). Toàn bộ pipeline tự động qua MAPI:
+`build_sb29_global.py` → `push_to_midas.py --run` → `report_results.py`.
+Đã vá 6 lỗi im lặng, nặng nhất là **gối P1/P4 bị thả phương đứng** (elastic link
+đứng nên `SDx` là trục đứng chứ không phải trục dọc) làm hai nhịp biên chạy như
+công xôn 40,85 m; mô men âm tại P2 dưới DC từ −235 602 về đúng −124 117 kN·m.
+
+**Việc phiên sau**: rà soát từng thành phần lực → rà soát tổ hợp → kiểm toán
+mặt cắt bằng **GSD** → **phân tích động HSLM + RSI** → viết báo cáo tính toán.
+
+**Track cũ**: hồ sơ báo cáo TGD (BXD 32,6 m) —
+`1_du_an\BXD\TGD\05_BAO_CAO_TGD\`, tạm dừng.
+Code track `vbridge-dyn` v0.2 (MCT generator) vẫn tạm dừng.
+
+**Trạng thái (2026-07-26)**: `Phu_luc_tinh_toan_lan_3_chi_tiet.docx` đã **chốt bản
+sửa theo markup của user** — 8 trang, 9 mục, 5 bảng (đã đặt tên Bảng 1-5), 10 hình.
+Đã xoá toàn bộ viện dẫn nội bộ "Mục X, tài liệu 8-4" (trích TCVN 13594 trực tiếp),
+bỏ giọng văn tự quảng bá, và căn chỉnh lại 5 bảng (khổ cố định 9.355 twips = đúng
+vùng chữ A4 lề 3,0/1,5 cm; lặp dòng tiêu đề; cantSplit; căn giữa theo chiều cao).
+Backup: `Phu_luc_tinh_toan_lan_3_chi_tiet_BACKUP_truoc_sua.docx`.
+
+**Next Action (cụ thể)**:
+1. Chờ user review bản phụ lục vừa sửa; nếu duyệt → rà `Bao_cao_lan_3.docx` (báo cáo
+   chính) theo **cùng 3 quy tắc**: bỏ ref "tài liệu 8-4", bỏ giọng tự quảng bá, căn
+   chỉnh bảng. Xem [[docx-markup-review-convention]] trong memory.
+2. **DAF (DY-06)**: còn thiếu — cần xuất riêng bảng My tĩnh LM71×Φ từ MIDAS rồi lập
+   tỷ số `DAF = M_dyn / (M_LM71 × Φ)` theo từng vị trí. Đây là mục duy nhất trong phụ
+   lục còn ghi `(~)`.
+3. Cập nhật `SO_THEO_DOI_TIEU_CHI_VA_CASE_MIDAS.xlsx` (00_QUAN_LY_HO_SO) cho khớp
+   trạng thái RSI mới (đã hội tụ) + chạy lại kiểm tra SHA-256.
+
+**Blocker**: RS-09 (lực trong giá đỡ ray / fastener, uplift ≤ 12 kN, nén tấm đàn hồi
+≤ 2,5 mm) chờ catalog nhà cung cấp. AT-02 (xoắn ray 3 m) + AT-05 (dao động ngang) +
+TN-02 (VBI) cần model 3D hai ray / tải ngang / tham số phương tiện.
+
+**Công cụ đã dùng để sửa docx**: python-docx thao tác XML trực tiếp
+(`w:strike`, `w:highlight`, `w:tblGrid`, `w:tblHeader`) + xuất PDF kiểm tra bằng
+Word COM (`win32com` → `ExportAsFixedFormat`) + render PNG bằng PyMuPDF. Nhanh và
+chính xác hơn OfficeCLI cho việc căn chỉnh bảng.
+
+---
+
+## Session Log
+
+- 2026-09-12: **SB29** — vá 6 lỗi im lặng của mô hình tĩnh (gối P1/P4 thả phương đứng; CS không được giải; Q_LAK 1031→1000 kN; DT/SET/EQ là case rỗng), đẩy LM71 + 17 tổ hợp qua MAPI, chạy sạch 6 loại phân tích. Ghi lại 2 bẫy MAPI: `/doc/anal` trên tài liệu `Untitled` treo cả midas; `Convert Self-weight into Mass` phải `PUT /db/styp` kèm `SMASS`.
+- 2026-07-26: Chốt phụ lục lần 3 — accept markup (14 đoạn gạch bỏ, 2 highlight), bỏ hết ref "tài liệu 8-4", căn chỉnh 5 bảng + đặt tên Bảng 1-5.
+- 2026-07-25: Dựng `Bao_cao_lan_3.docx` + `Phu_luc_tinh_toan_lan_3_chi_tiet.docx` (style NĐ30/bản lần 1); giải xong RSI bằng MIDAS RSI Wizard (ballastless) → ứng suất ray 72,7 < 92 MPa.
+- 2026-07-24: Chạy xong quét động HSLM-A1..A10 (320 case, 144-420 km/h); chi phối HSLM-A7, az = 3,374 m/s² (dự trữ ~32,5% so 5,0).
+
+---
+
 ## 1. Vai trò phần mềm (KHÔNG THAY ĐỔI)
 
 VBridge-Dyn là **lớp tự động hóa (pre + post processor)** cho phân tích động
@@ -125,7 +184,7 @@ src/vbridge_dyn/
   **Field layout chờ file mẫu Midas 2022 (blocker B1).**
 - `*LINELANE` khai báo track bằng (element-list + ECC ngang) → track **tĩnh** KHÔNG cần
   sub girder; **Train Load Generator** (động) mới cần sub-girder beam line. Chi tiết:
-  `projects/hcm_cg/SUB_GIRDER_RESEARCH.md`.
+  `1_du_an/hcm_cg/SUB_GIRDER_RESEARCH.md`.
 
 ---
 
@@ -195,7 +254,7 @@ phải có file model trong repo (hoặc owner cung cấp local), không chỉ P
 | V03 | KD-Railway Chapter6_Example | KD-Railway output CSV (chưa có file model) | Xu hướng peak velocity + critical speed approximate + report layout đúng |
 | V04 | HS2 case eigenvalues | docs HS2 PDF p.30 (chỉ PDF, không có file model) | f_1 cùng order (~6 Hz), N modes đầu cùng chiều biến |
 | V05 | HS2 envelope HSLM-A1..A10 | docs HS2 PDF p.36 (chỉ PDF) | Peak velocity ≈ ±20 km/h; accel trend qualitative giống |
-| **V09** | **HSR HCM-CG typical span** | `refer/202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (Midas Civil 2025, HSLM-A, ξ=1%, dt=0.001s, Vtk=350, Vmax=420, f_bending≈5.9312 Hz, f_torsion≈16.35 Hz, Vcr≈384.34 km/h) | f_bending cùng order (~6 Hz), f_torsion cùng order (~16 Hz), Vcr ±20 km/h, report layout đầy đủ 13 mục |
+| **V09** | **HSR HCM-CG typical span** | `3_ho_so_tham_khao/202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` (Midas Civil 2025, HSLM-A, ξ=1%, dt=0.001s, Vtk=350, Vmax=420, f_bending≈5.9312 Hz, f_torsion≈16.35 Hz, Vcr≈384.34 km/h) | f_bending cùng order (~6 Hz), f_torsion cùng order (~16 Hz), Vcr ±20 km/h, report layout đầy đủ 13 mục |
 
 CI: V01-V02 + V06-V07 chạy mỗi PR (<5 min). V03-V05, V09 chạy weekly hoặc
 on-demand. V08, V10 chạy khi tới Phase 2/3.
@@ -206,13 +265,13 @@ on-demand. V08, V10 chạy khi tới Phase 2/3.
 
 | Nguồn | Đường dẫn / URL | Vai trò |
 |---|---|---|
-| Bản tính HSR HCM-CG | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\refer\202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` | Benchmark V09 + tham chiếu TCVN |
-| MIDAS UK Tutorial HS2 | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\docs\[Final]Dynamic Analysis for High Speed Two (HS2).pdf` | Benchmark V04-V05 + Eurocode mapping |
-| KD-Railway snapshots | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\refer\KD_Railway_software\Snapshot\*.JPG` | UX inspiration |
+| Bản tính HSR HCM-CG | `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao\3_ho_so_tham_khao\202512-23_HSR-CG Ban Tinh Tong The H7H15m.pdf` | Benchmark V09 + tham chiếu TCVN |
+| MIDAS UK Tutorial HS2 | `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao\docs\[Final]Dynamic Analysis for High Speed Two (HS2).pdf` | Benchmark V04-V05 + Eurocode mapping |
+| KD-Railway snapshots | `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao\3_ho_so_tham_khao\KD_Railway_software\Snapshot\*.JPG` | UX inspiration |
 | KD-Railway repo | https://github.com/lekhuong/KD-Railway | File format tham khảo |
 | Plan chi tiết (bản trong repo) | [`docs/PLAN_REV9.md`](./docs/PLAN_REV9.md) | Rev9, đã được duyệt |
-| Research model HSR HCM-CG | `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\projects\hcm_cg\` (`input_parameters.yaml`, `MODEL_UNDERSTANDING.md`, `SUB_GIRDER_RESEARCH.md`) | Dữ liệu dựng model 5 nhịp thật + nghiên cứu sub girder/tải tàu |
-| Converte_RM_to_Midas (private) | `...\refer\Converte_RM_to_Midas\src\` (`core/geometry.py`, `pipeline/step_020_json_to_mct.py`) | Gốc pipeline polygon section đã validate 100% Midas SPC (STIFF3 Euclidean) |
+| Research model HSR HCM-CG | `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao\1_du_an\hcm_cg\` (`input_parameters.yaml`, `MODEL_UNDERSTANDING.md`, `SUB_GIRDER_RESEARCH.md`) | Dữ liệu dựng model 5 nhịp thật + nghiên cứu sub girder/tải tàu |
+| Converte_RM_to_Midas (private) | `...\4_cong_cu\rm2midas\src\` (`core/geometry.py`, `pipeline/step_020_json_to_mct.py`) | Gốc pipeline polygon section đã validate 100% Midas SPC (STIFF3 Euclidean) |
 
 ---
 

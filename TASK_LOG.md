@@ -5,6 +5,590 @@
 
 ---
 
+## 2026-09-12 — SB29: vá mô hình tĩnh đối chứng, chạy sạch 6 loại phân tích
+
+**Bối cảnh**: track mới từ 2026-09-11 — mô hình đối chứng cầu SB29 (Km116+097,
+ĐSTĐC Hà Nội–Quảng Ninh, 40,85+64+40,85 m), ngoài repo tại
+`1_du_an/SB29_HNQN/`. Vào phiên, kiểm tra thì phân tích
+tĩnh đã chạy nhưng kết quả thuộc file khác và 6/15 case cho kết quả bằng 0.
+
+**Quyết định**:
+- Giữ `.mct` là nguồn cho những gì nó diễn tả đúng được; các khối mà cú pháp MCT
+  chưa kiểm chứng (gradient, lún, phổ phản ứng, quy đổi khối lượng) **chỉ** tạo
+  qua MAPI, và ghi chú rõ trong `.mct` — thà thiếu còn hơn tạo file sai âm thầm.
+- Phạm vi mô hình chốt là **145,70 m** (P1→P4); hai nhịp dẫn 32,65 m không mô
+  hình (thuyết minh trước ghi 209 m gây hiểu nhầm, đã sửa).
+
+**Đã làm**:
+- **Gối P1/P4 thả phương đứng** — lỗi nặng nhất. Elastic link nối nút dầm (z=0)
+  xuống đỉnh trụ nên trục x cục bộ là trục ĐỨNG; bản cũ khai `SDx = 0` định thả
+  phương dọc. Hệ quả: hai nhịp biên chạy như công xôn 40,85 m, đầu dầm võng
+  74,5 mm dưới DC, mô men âm tại P2 = −235 602 kN·m. midas **không** báo lỗi vì
+  phương ngang + xoắn vẫn khoá. Xác định trục đúng bằng thí nghiệm 3 biến thể
+  SDR trên chính midas (tiêu chí: lực hãm về P1/P4 phải = 0) → `SDx = SDy = ∞,
+  SDz = 0`. Sau khi sửa: đầu dầm 1,56 mm, mô men tại P2 −124 117 kN·m.
+- `CS` đổi `LCTYPE` `CS`→`T` (kiểu `CS` chỉ giải trong construction stage).
+- `Q_LAK` dùng tải rải từng phần → đúng 1 000 kN / 30,30 m (trước 1 031 kN).
+- `DT_P/DT_M` (gradient +15/−8 °C, EN 1991-1-5 B.6.1 Type 3), `SET` (4 nhóm lún
+  10 mm + case đường bao), `EQ_X/EQ_Y` (phổ EN 1998-1 Type 1 nền E, a_gR=0,12g,
+  q=1,5) — trước là case rỗng kiểu USER, kết quả bằng 0.
+- **LM71 chưa từng được đẩy vào midas**: có trong `.mct` nhưng `push_to_midas.py`
+  không gửi bảng moving load. Bổ sung code/lane/vehicle/2 case.
+- 17 tổ hợp (12 ULS + 5 SLS) dùng đúng loại `ST`/`MV`/`SM`/`RS`.
+- Thêm `scripts/report_results.py` xuất bảng kết quả.
+
+**Số liệu chốt**: cân bằng DC 146 652 / DC2 20 398 / Q_LBK 2 914 / Q_LAK 1 000,0 kN.
+f₁ = 2,14 Hz, tổng khối lượng 17 035 t, tham gia X/Y = 90,6/92,4 %.
+My chi phối: ULS-1D +124 682, ULS-1E −416 829 kN·m. Độ võng LM71×Φ nhịp 64 m =
+9,40 mm = L/6 809 (giới hạn L/600) → đạt. **Động đất chi phối phần dưới**: mô men
+đáy bệ P2 tới 191 803 kN·m (ULS-4B) so với 35 307 kN·m (ULS-3A).
+
+**Hai bẫy MAPI đã trả giá** (chi tiết ở `docs/01_THUYET_MINH_MO_HINH.md` §7):
+1. `/doc/anal` trên tài liệu `Untitled` → midas bật Save As và **treo cả API lẫn
+   GUI**, phải can thiệp tay. midas còn tự bật hộp thoại lưu sau một lúc nếu tài
+   liệu chưa có tên → có thể nổ giữa lúc đang đẩy dữ liệu. Nay `push_to_midas.py`
+   `/doc/saveas` ngay sau `/doc/new`.
+2. `Convert Self-weight into Mass`: phải `PUT /db/styp` với bản ghi đầy đủ **kèm
+   `SMASS: 1`**. `POST` không ghi; `GET` chỉ trả `SMASS` khi cờ đang bật nên
+   round-trip GET→PUT lúc đang tắt bị thiếu trường → `Wrong Field`. Quên thì khối
+   lượng dao động còn 2 080 t thay vì 17 035 t, f₁ 4,52 thay vì 2,14 Hz.
+
+**Blockers mới**:
+- B# — `q` (hệ số ứng xử động đất) chưa chốt: 1,5 hay 3,5·λ. Ảnh hưởng >2 lần tới
+  toàn bộ ULS-4 ⇒ tới cốt thép trụ và cọc. Cần chốt trước khi kiểm toán mặt cắt.
+- B# — chưa có bố trí cốt thép trong `sb29_data.py` ⇒ chưa kiểm toán GSD được.
+
+---
+
+## 2026-07-24 — Sweep động A1–A10 hoàn tất + cập nhật hồ sơ tiêu chí TGD
+
+**Bối cảnh**: User đã chạy MIDAS Civil 2022 toàn bộ quét động HSLM-A1…A10 (bản
+GROUPED theo đoàn tàu, ζ=1,0%). Do MIDAS hạn chế chiều dài đường dẫn, mô hình
+chạy được di chuyển sang `D:\00_MCT_GOP_NHIEU_VAN_TOC`. Yêu cầu: bám tiêu chí
+thiết kế (`8-4_ Tieu chi TK (TEDI)-PT dong.docx`), xử lý các mục liên quan đến
+mô hình tính + xuất kết quả, rồi mới làm báo cáo một lượt.
+
+**Đã làm** (chỉ phần mô hình + xuất kết quả, chưa làm báo cáo):
+- Xác minh dữ liệu FINAL `00_TONG_HOP_KIEM_TRA_20260724_FINAL`: 320 case,
+  76/76 sheet đọc OK, `complete_exports=True`, `out_ok=True`, 10/10 đoàn tàu,
+  mỗi đoàn 1 OUT gộp. `1_du_an/BXD/slide/.../HSLM-A1_A10_FULL_SWEEP_20260724` đã đồng bộ
+  đủ (5 file trùng md5 + governing_by_train/identity_crosscheck + KIEM_TRA_TONG_THE).
+- Cập nhật ma trận tiêu chí `SO_THEO_DOI_TIEU_CHI_VA_CASE_MIDAS.xlsx`:
+  - Ma_tran: CS-02/03/04/07 + DY-03/04/05 → **ĐÃ CÓ KẾT QUẢ** (kèm bằng chứng sweep);
+    CS-10/DY-06 giữ MỘT PHẦN nhưng ghi rõ dữ liệu đã đủ để lập phụ lục.
+  - Tong_quan (công thức COUNTIF tự cập nhật): Đã có 12→19, Một phần 10→7,
+    MCT chờ chạy 4→0; kết luận quản lý #3 sửa để phản ánh envelope A1–A10 xong.
+  - So_case_MIDAS: 320 dòng → **ĐÃ CHẠY - ĐÃ XUẤT**, cột OUT trỏ về `D:\00_MCT_GOP_NHIEU_VAN_TOC\<train>\...GROUPED\Untitled.OUT`.
+  - Ket_qua_da_co: thêm block envelope A1–A10 (DZ/az/My/f1 chi phối), cập nhật ghi chú A1@330.
+- Cập nhật `README_TONG_THE.md` (dossier) phản ánh sweep xong + nguồn D:\00_...
+  và làm rõ vai trò `KET_QUA_KIEM_TRA_HO_SO` là kiểm tra toàn vẹn cấu trúc.
+
+**Kết quả chi phối (envelope A1–A10, ζ=1,0%)**: HSLM-A7 —
+|DZ|=4,268 mm@415, |az|=3,374 m/s²@420 (đạt ≤3,5 ballast, dự trữ ~3,6%),
+|My|=12.690 kN·m@415; f1=4,790193 Hz (mọi đoàn).
+
+**Còn lại theo tiêu chí** (đưa vào phụ lục/báo cáo hoặc chờ đầu vào):
+DY-06 DAF động/tĩnh, CS-10 bảng mode đến cutoff, AT-01 L/600 + TN tiện nghi,
+ST-09/DY-07 mỏi cáp-cốt đai, RS-01…09 RSI (không hội tụ), CS-05 đoàn tàu thực,
+AT-02/04/05/06 cần model 3D hai ray, ST-03/04 SW/0–SW/2.
+
+**Chưa làm**: báo cáo TGD (`05_BAO_CAO_TGD/*.docx`) — làm một lượt ở bước sau.
+
+## 2026-07-25 — Báo cáo TGD lần 3 + Phụ lục tính toán + chốt RSI (Wizard)
+
+**Bối cảnh**: session dài, làm việc trên hồ sơ TGD `1_du_an/BXD/TGD/`.
+
+**Chốt RSI**: model dựng tay không hội tụ do (a) nối liên tục 32 mối (link SDx=1e7), (b) dùng
+trị số ballast cho ballastless. Dựng lại bằng **MIDAS RSI Wizard** (giản đơn + Concrete Bed,
+u0=0,5mm, kháng 40/60) → HỘI TỤ. Kết quả (bản V2, ΔT ray=0 để loại CWR tự do): **ứng suất ray
+bổ sung +72,7/−62,7 MPa ≤ ±92 → ĐẠT**; δB 0,99≤5; δH 2,77≤8; δv 0,76≤2. Quy trình chốt:
+Wizard sinh model → **Analyze lại** → mới xuất Rail Track Analysis Report. Còn RS-09 fastener
+(uplift 12kN/nén 2,5mm) chờ catalog.
+
+**Ma trận tiêu chí** (`00_QUAN_LY_HO_SO/SO_THEO_DOI_TIEU_CHI_VA_CASE_MIDAS.xlsx`): 31 đã có kết
+quả / 5 một phần / 2 không áp dụng / 7 chờ đầu vào. AT-01/03/04, TN-01, CS-10, RS-02…07 lên ĐẠT.
+
+**Báo cáo chính** `05_BAO_CAO_TGD/Bao_cao_lan_3.docx`: cập nhật lần 2, style bám bản chính thức
+lần 1 (`bao_cao_lan_1_ban_chinh_thuc.pdf`). Cấu trúc §1–§8 + §3.3 an toàn giao thông (tóm tắt
+Mục 3 doc 8-4) + §3.4 tiện nghi (Mục 4). Định dạng NĐ30 (heading 15pt xanh 1F4E79 / tiểu mục
+14pt / thân bài 13pt / bảng 12pt header xanh chữ trắng; từ khóa kỹ thuật đỏ FF0000). §6 chi tiết
+(RSI Wizard/Ballast-Fastener/SSI/Plugins/API). Header "Phòng QLCL&NCPT". **Đã bỏ mọi nội dung
+riêng BXD 32,6m** khỏi báo cáo chính (tổng quát hóa).
+
+**Phụ lục** `05_BAO_CAO_TGD/Phu_luc_tinh_toan_lan_3_chi_tiet.docx` (bản summary cũ
+`Phu_luc_tinh_toan_lan_3.docx` chờ xóa khi user đóng): 9 mục, 5 bảng, **10 hình** (mô hình 3D,
+cáp DƯL, HSLM-A, ζ, mode 4,79Hz, đồ thị V–az/V–DZ, time-history, **ứng suất ray dọc tuyến**).
+Đã đối chiếu đủ doc 8-4 + bổ sung nhóm A (V>200 → động bắt buộc; Φ3=1,129; DAF; lực dọc ray
+Nr≈557≤706kN; điều kiện UIC-60; sửa nhãn δB dọc). Đồ thị + ảnh ở `05_BAO_CAO_TGD/appendix_figs/`.
+Công cụ: **OfficeCLI** (npm @officecli/officecli) + python-docx + pandoc + matplotlib.
+
+**Next action**: (1) user đóng file summary cũ → xóa + đổi tên bản chi tiết thành
+`Phu_luc_tinh_toan_lan_3.docx`. (2) DAF bằng số cần user xuất riêng moving-load LM71×Φ trên dầm.
+(3) RS-09 fastener chờ catalog. (4) nhóm B (xoắn ray 3D, dao động ngang, VBI, mỏi) là hạng mục
+mô hình/đầu vào riêng.
+
+## 2026-07-26 — Chốt bản sửa phụ lục lần 3 theo markup của user
+
+**Bối cảnh**: user sửa trực tiếp vào `05_BAO_CAO_TGD/Phu_luc_tinh_toan_lan_3_chi_tiet.docx`
+bằng định dạng thủ công (gạch ngang + highlight vàng, KHÔNG dùng Track Changes) rồi yêu cầu
+thi hành, kèm "căn chỉnh ô, bảng biểu phù hợp".
+
+**Quyết định — quy ước đọc markup** (đã ghi memory `docx-markup-review-convention`):
+- `w:strike` = nội dung không đưa vào → xoá trọn run.
+- `w:highlight` vàng = chữ user vừa chèn (rsid khác rsid gốc) → giữ chữ, bỏ nền.
+- Chữ đỏ FF0000 = nhấn mạnh kỹ thuật có chủ ý của tài liệu → giữ nguyên.
+- Khi xoá làm câu sai ngữ pháp: **bỏ trọn cụm đã gạch**, không tự giữ liên từ để chữa câu
+  (user đã yêu cầu bỏ luôn "nên theo" sau khi tôi giữ lại).
+
+**Đã làm**:
+- Accept 14 đoạn gạch bỏ + 2 chỗ highlight. Xoá **toàn bộ viện dẫn nội bộ** "Mục 1.3/1.4/3/4,
+  Mục 2.4-2.5, tài liệu 8-4" → trích TCVN 13594 trực tiếp (mục 2 còn `(11.4.4.4 TCVN 13594-3)`).
+- Bỏ giọng tự quảng bá ("nhằm minh chứng năng lực của" → "sử dụng phần mềm").
+- Gọn cột "Đánh giá" trong bảng: bỏ "(dự trữ ~32,5%)", "(mức rất tốt)", "(cần model 3D)",
+  "(giai đoạn NX/VBI)"; giới hạn Δu_rb → "không áp dụng" (4 mm là trị số của ballast).
+- Căn chỉnh 5 bảng: `tblW` 9.355 twips + `tblLayout fixed` (= đúng vùng chữ A4, lề 1701/850),
+  `tblHeader` lặp tiêu đề khi sang trang, `cantSplit`, `vAlign=center`, cellMar 40/85, cột chữ
+  căn trái + cột số căn giữa, tinh chỉnh bề rộng cột để hết ngắt chữ xấu.
+- **Đặt tên Bảng 1-5** (nghiêng 11pt, canh giữa, `keepNext`, phía trên bảng) — trước đây chỉ
+  hình có caption. Bề rộng cột chi tiết ghi ở memory `docx-table-layout-bao-cao`.
+- Backup `Phu_luc_tinh_toan_lan_3_chi_tiet_BACKUP_truoc_sua.docx`. File cuối: 8 trang, sạch
+  (0 `w:strike`, 0 `w:highlight`, 0 chuỗi "tài liệu 8-4").
+
+**Lý do dùng python-docx + XML trực tiếp** (không OfficeCLI): cần đọc/ghi chính xác
+`w:strike`/`w:highlight`/`w:tblGrid`/`w:tblHeader`. Kiểm tra bằng Word COM
+(`win32com` → `ExportAsFixedFormat` format 17) rồi render PNG bằng PyMuPDF để soi bảng.
+
+**Next action**: (1) chờ user review; nếu duyệt → áp **cùng 3 quy tắc biên tập** cho
+`Bao_cao_lan_3.docx`. (2) DAF (DY-06) vẫn chờ bảng My tĩnh LM71×Φ. (3) cập nhật
+`SO_THEO_DOI_TIEU_CHI_VA_CASE_MIDAS.xlsx` cho khớp trạng thái RSI đã hội tụ + chạy lại SHA-256.
+
+## 2026-07-24 (4) — RSI dựng lại bằng Wizard ĐÃ HỘI TỤ (đột phá)
+
+Sau khi viết `HUONG_DAN_DUNG_LAI_RSI_WIZARD.md`, user dựng lại bằng MIDAS Rail Track Analysis
+Wizard (`04_RSI/04_MCT_PHUC_HOI/RSI_Wizad_32.6m/`, simply-supported từng nhịp + Concrete Bed
+ballastless). Model `..._Add3_ExpansionJoint_Str` **hội tụ sạch 6 vòng lặp** (norm 1,0→0,29→
+0,036→0,0094→0,0025→0,00083 < tol 1E-3), KHÔNG còn chatter. ⟹ Xác nhận chẩn đoán: nguyên nhân
+là **model dựng tay bị nối liên tục (32 link SDx=1e7) + sai loại nền (ballast thay vì ballastless)**;
+Wizard sinh đúng giản đơn/ballastless → hội tụ. Còn lại: mới chạy 1/10 model; cần chạy nốt
+Add1/Add2/Add3 + Mov1/2/3 (+ model ứng suất _Temp/_Train), xuất Rail Track Analysis Report,
+rồi đọc kết quả → mở khóa RS-01…09 + AT-06.
+
+**Kết quả RSI (report Untitled 16:19)**: sau khi đặt **ΔT ray=0** (loại ứng suất CWR ray tự do
+~126 MPa lẫn trong bản đầu 204 MPa) và Analyze lại: **ứng suất ray bổ sung +72,7/−62,7 MPa ≤ 92/72
+→ ĐẠT**; chuyển vị ngang dầm 0,99≤5 OK; xoay đầu dầm 2,77≤8 OK. Còn NG chuyển vị tương đối ray–dầm
+6,44mm>4mm — nhưng 4mm là tiêu chí có ballast; model vẫn dùng kháng ballast (u0=2mm). Bước chót:
+đặt Concrete Bed + trị số kháng ballastless (u0≈0,5mm) → chạy lại → dùng tiêu chí fastener ballastless.
+Quy trình chốt: Wizard sinh model → **Analyze lại** → mới xuất report. Chi tiết: README_PHUC_HOI_RSI.md.
+
+## 2026-07-24 (3) — Phục hồi RSI (chẩn đoán + MCT) + mở khóa AT-04
+
+**AT-04** (bậc chuyển vị đứng đầu dầm): user chỉ ra model là **chuỗi 5 dầm** nên tại
+mỗi trụ trong có 2 đầu dầm kề. Node đầu dầm vươn ra (vd `100031` x=32,65; `200001`
+x=32,75; cách gối 0,55 m) **không khống chế đứng** → Dz của chúng chính là δv. ⇒ AT-04
+tính được từ `Displacement.xls` đã có (CHƯA ĐỦ ĐẦU VÀO → **MỘT PHẦN**), không cần model mới.
+
+**RSI**: user đã export MCT nguồn từ `.mcb` (`.../Bang_tinh_phan_tich_dong_va_RSI_bang_midas/RSI/32.6m_RSI.mct`,
+18813 dòng, model UIC 774-3: rail Fe360 + 2.384 lò xo rail-track song tuyến Rlfc-1..32,
+LIMDISP=2 mm; tải nhiệt/hãm-kéo/đứng; 2 stage Unloaded/Loaded).
+- **Chẩn đoán phân kỳ**: Stage 1 hội tụ; Stage 2 "Loaded" phân kỳ (error norm
+  0,34→0,80→1,39→2,18) vì đồng thời chuyển lò xo Unloaded→Loaded **và** áp toàn bộ
+  tải tàu trong 1 bước (`bINCRESTEP=NO`) khi lò xo vượt ngưỡng dẻo 2 mm.
+- **Đã dựng** (`04_RSI/04_MCT_PHUC_HOI/`): `RSI_01_STAGE_SPLIT.mct` (Loaded 10 bước tải,
+  iITER=200) + `RSI_01b_STAGE_SPLIT_FINE.mct` (Loaded 20/Unloaded 10 bước, iITER=300) +
+  `README_PHUC_HOI_RSI.md`. Chỉ đổi khối STAGE + iITER, phần còn lại giữ nguyên (18813 dòng).
+- Sheet RSI (xlsx): RSI-00/01/02 → "MCT ĐÃ SẴN - CHỜ CHẠY". RS-01…09 (Ma_tran) giữ
+  KHÔNG HỘI TỤ đến khi có OUT hội tụ.
+- **Chờ user**: chạy `RSI_01` trong MIDAS; nếu hội tụ → export rail force/stress, chuyển vị
+  tương đối ray–dầm, δB/δH đầu dầm, fastener (giới hạn ứng suất ray **±92 MPa ballastless**).
+
+**Cập nhật kết quả chạy (user chạy 3 file)**: cả `RSI_01`, `RSI_01b`, `RSI_00` **đều KHÔNG
+hội tụ**. Bằng chứng quyết định: (1) load-stepping bị RTI bỏ qua (Stage 2 luôn STEP 1, dãy
+lặp y hệt gốc); (2) error norm khóa chu trình 2 giá trị (~1,95↔~1,46) = lò xo song tuyến
+chatter; (3) RSI_00 (scale hàm để không yield) vẫn switch trạng thái, làm hỏng cả Stage 1
+(0,032→bùng 2,4). ⟹ **Bất hội tụ nội tại ở solver Rail-Track Interaction của MIDAS; text-MCT
+hết dư địa.** Phải xử lý trong GUI: Rail Track Analysis Control (nới tiêu chí, bước tải nội tại,
+cập nhật tangent), tách chuỗi tải UIC 774-3 (nhiệt→đứng→hãm/kéo), rà neo dọc ray, hoặc dựng
+lại bằng RTA wizard. Xem `04_RSI/04_MCT_PHUC_HOI/README_PHUC_HOI_RSI.md`.
+**Khuyến nghị**: RSI thành hạng mục MIDAS song song; làm báo cáo TGD với RS-01…09 + AT-06
+đánh dấu "đang xử lý" (đúng nguyên tắc chỉ hàng có OUT hợp lệ mới là kết quả).
+
+**Cập nhật cuối RSI (research + phương pháp riêng UIC 774-3)**: research web (MIDAS blog UIC 774-3)
+xác nhận điểm gãy song tuyến là vật lý mong đợi + có 2 phương pháp (staged vs separate). Đã thử
+phương pháp separate: `RSI_SEP_A_THERMAL` **HỘI TỤ**; nhưng `RSI_SEP_B_TRAIN`, `RSI_SEP_B1_VERTICAL`,
+`RSI_SEP_B2_BRAKING` đều chatter. **Cô lập được gốc rễ: mọi cấu hình dùng trạng thái lò xo LOADED
+đều chatter (bất kể tải), Unloaded thì hội tụ** ⟹ vấn đề ở định nghĩa kháng Loaded của lò xo
+rail-track (nhiều hàm Rlfc có LOADED=0), KHÔNG phải phương pháp/tải/staging. Đã thử tổng 6 biến thể
+text-MCT — hết dư địa. **Phải xử lý trong MIDAS GUI**: rà hàm kháng Loaded, dùng Analysis → Rail
+Track Analysis chuyên dụng. Nhánh nhiệt đã có kết quả hợp lệ. Chi tiết + mọi biến thể:
+`04_RSI/04_MCT_PHUC_HOI/README_PHUC_HOI_RSI.md`.
+
+**Chốt RSI (research YouTube/MIDAS/LUSAS + phát hiện của user)**:
+- User phát hiện model **nối liên tục** thay vì chuỗi giản đơn → xác nhận có hệ thống: 32 mối nối
+  khóa dọc 2 đầu dầm kề bằng link SDx=1e7 vào node ngang chung. Sai vật lý RSI + góp phần bất hội tụ.
+- `RSI_FIX_STAGED` (LOADED 0→3×unloaded): Stage 2 **y hệt bản gốc** → tài liệu MIDAS xác nhận kháng
+  Loaded chỉ áp nơi có tàu, ngoài ra dùng Unloaded ⟹ LOADED=0 là **red herring**, không phải nguyên nhân.
+- Model dùng trị số ballast (u0=2mm, 20/60) nhưng BXD ballastless (u0≈0,5mm) → sai đầu vào.
+- **Kết luận**: model RSI dựng tay không chuẩn; phải dựng lại bằng **MIDAS RSI Wizard** (mỗi nhịp
+  simply-supported Fixed/Free, trị số ballastless, wizard tự dịch tàu). Text-MCT đã cạn dư địa
+  (Stage 2 bất biến với mọi thay đổi text). RSI = hạng mục GUI riêng; báo cáo đánh dấu RS-01…09 + AT-06
+  "đang xử lý". Nguồn: MIDAS RSI Wizard blog + Support Rail Track Analysis Model/Boundary; LUSAS UIC774 E1-3.
+
+## 2026-07-24 (2) — Chốt ballastless + SW/0-SW/2 N/A; xử lý CS-08/ST-03/ST-04
+
+**Bối cảnh**: User yêu cầu xử lý thêm model SW/0-SW/2 và biến thể mass, và giải
+thích biến thể mass để làm gì/thuộc tiêu chí nào. Khi kiểm tra MCT + tài liệu 8-4:
+- Kết cấu là **5 nhịp giản đơn** (`*CONSTRAINT`: mỗi nhịp 1 gối cố định + 1 gối di động).
+- `04_DU_LIEU_DAU_VAO_BXD/project.yaml` khai báo **`track_type: ballastless`**.
+- Doc 8-4 xác nhận: γbt=3,5 m/s² (có balát) và **γdf=5,0 m/s² (liên kết trực tiếp)**;
+  biến thể mass cận trên/dưới là do **balát** (khô-sạch-mỏng ↔ bão hoà-bẩn-nâng ray).
+
+**Giải thích đã cung cấp**:
+- **Biến thể mass = CS-08** (EN 1991-2 6.4.6.3.1): cận dưới m → gia tốc max (DY-03);
+  cận trên m → tốc độ cộng hưởng thấp nhất (CS-03/DY-01). Nguồn bất định là balát.
+- **SW/0 = ST-03** (chỉ cầu liên tục), **SW/2 = ST-04** (tải nặng, khi có yêu cầu).
+
+**User chốt**: ray **ballastless**; **không cần cả SW/0 và SW/2**.
+
+**Đã làm** (không sinh MCT mới):
+- **Sửa giới hạn gia tốc 3,5 → 5,0 m/s²** (γdf ballastless) tại: DY-03 (xlsx),
+  Ket_qua_da_co (az envelope + A1@330), `KIEM_TRA_TONG_THE.md`, `README_TONG_THE.md`.
+  |az|max=3,373825 → **dự trữ 1,626175 m/s² ≈ 32,5%** (đạt), thay cho ~3,6%.
+- **CS-08 → ĐÃ CÓ KẾT QUẢ**: ballastless không có bất định khối lượng balát, mass
+  danh nghĩa (self-weight + G2=106,75 kN/m qua *LOADTOMASS) đủ; biến thể balát N/A.
+- **ST-03 (SW/0) → KHÔNG ÁP DỤNG** (giản đơn); **ST-04 (SW/2) → KHÔNG ÁP DỤNG** (HSR khách).
+  Thêm dòng đếm "Không áp dụng" + COUNTIF vào `Tong_quan`.
+- Tổng quan mới: **Đã có 20 / Một phần 6 / Chờ chạy 0 / Chưa đủ 8 / Không áp dụng 2 / Không hội tụ 9 = 45**.
+
+**Lưu ý cho báo cáo**: mốc kết luận gia tốc là 5,0 m/s² (ballastless). Nếu sau này
+đổi sang có balát, phải quay lại 3,5 m/s² và chạy biến thể mass balát cận trên/dưới.
+
+## 2026-07-23 — Chia nhỏ MCT gộp cho MIDAS Civil 2022
+
+**Bối cảnh**: File A1 gộp 10 vận tốc, 1.550 time functions và khoảng 5,2 MB
+không mở được trong MIDAS Civil 2022 dù kiểm tra chéo tham chiếu MCT hợp lệ.
+Tài liệu MCT chính thức cho phép nhiều TFUNCTION/THLDCASE nhưng không công bố
+giới hạn số lượng; coi đây là giới hạn thực tế của phiên bản/khối dữ liệu.
+
+**Đã làm**:
+- Giữ bộ gộp lớn để truy vết và thêm cảnh báo không sử dụng.
+- Tạo `generate_bxd_tgd_chunked_dynamic_cases.py` và sinh 81 MCT chia nhỏ.
+- Khóa pilot A1 330+340: 2 TH cases, 310 functions, 310 DYN-NLOAD, 4 graphs.
+- Các file khác tối đa 4 case, 620 functions và khoảng 2,12 MB.
+
+**Verify**:
+- Tất cả file PASS kiểm tra duy nhất block, tên function/case/graph và tham chiếu
+  DYN-NLOAD; vẫn cần MIDAS xác nhận bằng cách import/run pilot.
+
+## 2026-07-23 — HSLM-A1 320/325 và MCT gộp nhiều vận tốc
+
+**Đã làm**:
+- Đọc lại toàn bộ kết quả HSLM-A1 bằng skill batch; xác nhận 161/161 sheet
+  được đọc, không có sheet lỗi.
+- Xác nhận 320 km/h: 155 dynamic inputs, 8303 bước, `dt=0.001 s`,
+  `|DZ|max=2.805 mm`, `|aZ|max=2.047736 m/s²`, `|My|max=8651.29 kN.m`.
+- Xác nhận 325 km/h: 155 dynamic inputs, 8221 bước, `dt=0.001 s`,
+  `|DZ|max=2.227 mm`, `|aZ|max=1.512030 m/s²`, `|My|max=6934.16 kN.m`.
+- Thêm `report_tools/generate_bxd_tgd_grouped_dynamic_cases.py`; script ghép
+  các MCT đơn theo từng đoàn tàu, tự loại case đã có đủ MCB/OUT/7 workbook.
+- Sinh 10 MCT gộp cho 297 case chưa chạy; A1 chỉ gồm 330–420 km/h, A2–A10
+  gồm toàn bộ dải theo manifest. Mỗi case giữ tên time function, TH load case
+  và TH graph riêng.
+
+**Verify**:
+- Tất cả MCT gộp PASS kiểm tra một block động mỗi loại, tên duy nhất và mọi
+  tham chiếu DYN-NLOAD được giải quyết.
+- `ruff check report_tools/generate_bxd_tgd_grouped_dynamic_cases.py`: PASS.
+- `pytest tests/unit/test_static_countercheck.py -q`: 3/3 PASS.
+- `verify_bxd_tgd_dossier.py`: PASS_WITH_WARNINGS; hai cảnh báo SW/0 và SW/2
+  thuộc phạm vi MCT tĩnh, không phát sinh từ MCT gộp.
+
+## 2026-07-03 — BXD dynamic rerun report + project skills
+
+**Bối cảnh**: Sau khi sửa dynamic end time để dùng chiều dài chuỗi dầm đang
+phân tích, user chạy lại MIDAS cho `model_dynamic_countercheck_32_6_HSLM-A1_330`
+và export kết quả vào thư mục result tương ứng. Cần đọc lại kết quả, dựng báo cáo
+theo form `Tinh_toan_phan_tich_dong.docx`, và tạo skill/harness để tái sử dụng.
+
+**Đã làm**:
+- Đọc export mới trong
+  `examples/bxd/generated/midas/model_dynamic_countercheck_32_6_HSLM-A1_330/`.
+- Xác nhận OUT mới: `155` dynamic inputs, `8142` time steps, `dt=0.001 s`,
+  valid DOF `895`, không thấy warning/error chính.
+- Đồng bộ bản MCT trong result folder với canonical MCT cấp `generated/midas`;
+  cả hai hiện có `ETIME=8.142545455 s`.
+- Thêm harness `examples/bxd/generated/midas/build_dynamic_analysis_report.py`
+  đọc OUT/Excel/BMP, cập nhật template Word, xuất phụ lục Excel và markdown.
+- Tạo báo cáo:
+  `bao_cao_tinh_toan_phan_tich_dong_model_dynamic_countercheck_32_6_HSLM-A1_330.docx`.
+- Tạo 4 skill dùng lại ở `C:\Users\vupq.CITEC\.codex\skills`:
+  `hsr-bridge-project-navigator`, `hsr-mct-dynamic-hardener`,
+  `hsr-midas-output-reviewer`, `hsr-dynamic-report-builder`.
+
+**Kết quả chính MIDAS mới**:
+- Mode 1: `4.790193 Hz`.
+- Modal mass: UZ mode 1 khoảng `15.32%`; UZ sum mode 1-5 khoảng `76.61%`.
+- Node giữa nhịp `100016`: `DZ = 1.811 mm`, `|aZ| = 1.188777 m/s²`.
+- Gia tốc DZ toàn cục: khoảng `1.195051 m/s²` tại node `100013`.
+- Nội lực động: `|My|max = 5682.89 kN.m`, `|Vz|max = 547.05 kN`.
+
+**Verify**:
+- `python examples\bxd\generated\midas\build_dynamic_analysis_report.py` PASS.
+- Wrapper skill `hsr-dynamic-report-builder/scripts/run_bxd_dynamic_report.py` PASS.
+- `quick_validate.py` PASS cho 4 skill mới.
+
+## 2026-06-24 — BXD dynamic countercheck: HSLM-A1 @ 330 km/h
+
+**Bối cảnh**: Sau khi hoàn tất đối chứng tĩnh BXD 32,6 m, chuyển sang mục 5.7
+phân tích động HSLM-A để so với báo cáo. Báo cáo khống chế dầm 32,6 m bởi
+HSLM-A1 @ 330 km/h, `n0=5,066 Hz`, `amax=2,30 m/s²`, `δmax động=2,97 mm`.
+
+**Đã làm**:
+- Thêm `integrations/midas/mct/dynamic_countercheck.py` sinh MCT động riêng
+  `model_dynamic_countercheck_32_6_HSLM-A1_330.mct`.
+- Reuse dầm-only model và mesh split của `static_countercheck.py` để node giữa
+  nhịp vẫn là `100016`.
+- Sinh block `*TFUNCTION`, `*THLDCASE`, `*DYN-NLOAD`, `*TH-GRAPH` theo mẫu
+  Midas 2022 đã có trong `model_base_review.mct`; damping lấy `0,015`.
+- Cập nhật `static_countercheck_32_6.yaml` với cấu hình `dynamic_countercheck`
+  cho HSLM-A1, vận tốc 330 km/h, dt 0,001 s.
+- Cập nhật `rebuild_comparison_bxd_32_6.py` để thêm 3 dòng mục 5.7 ở trạng
+  thái `Chờ export dynamic`; sinh lại comparison workbook/markdown và Word
+  so sánh ngắn.
+- Cập nhật README/SESSION_STATUS trong thư mục generated.
+
+**Verify**:
+- `python -m vbridge_dyn.integrations.midas.mct.dynamic_countercheck` PASS,
+  sinh 29 time functions, graph node `100016`, duration `6,704 s`.
+- `pytest tests\unit -q`: **61/61 PASS**.
+- `ruff check src tests`, `mypy src`: PASS.
+
+**Cần làm tiếp**:
+- Import/chạy `model_dynamic_countercheck_32_6_HSLM-A1_330.mct` trong MIDAS.
+- Export modal/eigen và TH-Graph `deck acc 32.6`, `deck dz 32.6` để điền kết
+  quả mục 5.7 vào bảng so sánh.
+
+## 2026-06-23 — BXD static countercheck: ưu tiên tải tích hợp MIDAS
+
+**Quyết định**:
+- Tự trọng G1 không khai báo lại bằng `BEAMLOAD` từ báo cáo; dùng `*SELFWEIGHT`
+  để MIDAS tự tính từ hình học mặt cắt và trọng lượng riêng vật liệu.
+- LM71 không rải tay bằng node/beam load theo đường ảnh hưởng nữa; khai báo theo
+  block moving load của MIDAS (`*MVLDCODE=EUROCODE`, `*LINELANE`, `*VEHICLE`,
+  `*MVLDCASE`) để phần mềm tự quét vị trí bất lợi.
+- Tải từ báo cáo chỉ dùng cho phần chưa có/ chưa dùng built-in trong MIDAS:
+  G2, xe vận chuyển dầm, gió và các hệ số tổ hợp.
+- Nếu phải chia thêm node để đặt tải trục xe vận chuyển từ báo cáo thì phải sinh
+  kèm `*TS-GROUP` cho các đoạn taper `Box_3_1` và `Box_1_3`; không được để các
+  element mới làm mất khai báo biến thiên mặt cắt.
+
+**Đã làm**:
+- `static_countercheck_32_6.yaml`: thêm hệ số tổ hợp theo báo cáo và danh sách
+  `load_combinations`.
+- `static_countercheck.py`: bỏ `G1_REPORT`; thêm moving-load LM71 Eurocode; thêm
+  `*LOADCOMB`; giữ split chỉ cho tải trục vận chuyển.
+- `writer.py`: bật `bSELFWEIGHT=YES`; mở rộng `*TS-GROUP` để gom theo từng
+  tapered section trong group hỗn hợp, ví dụ `1-3` và `3-1`.
+
+**Verify**:
+- Sinh lại `examples/bxd/generated/midas/model_static_countercheck_32_6.mct`.
+- `pytest -q`: **60/60 PASS**.
+
+## 2026-06-23 — Note limitation parser tendon DXF BXD
+
+**Bối cảnh**: Parser `tendon.dxf` hiện được viết để chạy được bài toán BXD
+32.6 m trước, chưa phải convention tổng quát cho mọi cầu/cáp.
+
+**Ghi chú cần sửa sau**:
+- Logic hiện tại giả định mỗi layer cáp có đủ mặt đứng + mặt bằng, CAD vẽ 1/2
+  dầm và mirror ra full span, rồi gán profile cho toàn bộ group `Girder*`.
+- Với bài toán tổng quát cần dùng điểm/block `ref` trên mặt cắt để xác định hệ
+  tọa độ local riêng cho từng nhóm cáp, thay vì chỉ lấy tim mặt bằng và đỉnh
+  mặt đứng làm gốc quy đổi.
+- Danh sách phần tử gán cáp phải đọc từ DXF/CAD convention, không mặc định toàn
+  bộ dầm. Cáp ngắn, cáp neo từng đoạn, hoặc cầu thi công phân đoạn có thể chỉ
+  đi qua một phần tử/nhóm phần tử con.
+- Cần mở rộng schema để lưu `element_ids`/`element_range`, `reference_point`,
+  `section_group`, và quy tắc mirror theo từng tuyến cáp.
+
+**Trạng thái hiện tại**:
+- BXD `tendon.dxf` đọc được 13 layer × 5 girder groups = 65 tendon profiles.
+- Đã đọc được `prototype_element_ids` và `section_reference` để audit, nhưng
+  chưa dùng làm quy tắc gán/phép biến đổi tổng quát.
+
+## 2026-06-02 — Giữ nguyên số điểm OPOLY/IPOLY từ DXF
+
+**Bối cảnh**: Owner hỏi vì sao `IPOLY` của mặt cắt 1 và 3 khác số điểm dù DXF
+cùng số đoạn. Nguyên nhân: MCT writer đang gọi `_simplify_polygon()` trước khi
+ghi `OPOLY/IPOLY`, nên các điểm nằm trên cùng đường thẳng bị xóa.
+
+**Đã sửa**:
+- `sections.py`: bỏ simplify ở bước output polygon; chỉ còn dùng polygon đã
+  simplify cho tính STIFF3/stress points.
+- `OPOLY/IPOLY` giờ giữ nguyên số điểm sau khi DXF reader chia/trace loop.
+- Thêm unit test đảm bảo điểm thẳng hàng trong outer boundary và hole không bị
+  xóa khi ghi MCT.
+
+**Verify**:
+- Sinh lại `model_base.mct`.
+- `Box-01`: `OPOLY=48`, `IPOLY=12`; `Box-03`: `OPOLY=48`, `IPOLY=12`.
+- Tapered `Box-1-3` và `Box-3-1` cũng giữ 48/12 ở cả đầu YES/NO.
+- `pytest tests\unit -q`: **56/56 PASS**.
+- `ruff check src tests`, `ruff format --check src tests`, `mypy src`: PASS.
+
+## 2026-06-02 — Đối chiếu `model_base_review.mct`
+
+**Bối cảnh**: Owner chỉnh model trong Midas và lưu `examples/hcm_cg/generated/midas/model_base_review.mct`;
+yêu cầu đối chiếu, cập nhật ngược về nguồn sinh.
+
+**Đã cập nhật vào nguồn**:
+- `bridge.xlsx`: từ review nhập thêm 40 node bearing `6605..6644`.
+- `bridge.xlsx`: cập nhật section assignment của 80 element dầm chính theo review:
+  `Box_03` ở vùng đầu/cuối, `Box_01` giữa nhịp, tapered `Box-3-1` tại element
+  `103/203/303/403/503`, tapered `Box-1-3` tại element `114/214/314/414/514`.
+- `bridge.xlsx`: thêm sections tapered `Box_1_3` (`Box_01 -> Box_03`) và
+  `Box_3_1` (`Box_03 -> Box_01`).
+- `bridge.xlsx`: thay rigid links theo review: 10 link dầm chính → bearing nodes,
+  6 link đầu cọc → đáy bệ, 6 link đỉnh trụ → bearing nodes.
+- `bridge.xlsx`: thêm 20 elastic links dạng bearing với `dof_mask` lấy từ review
+  (`bearing_01`: `111000`, `bearing_02`: `110000`).
+- `bridge.xlsx`: thêm boundary groups `bearing_01..bearing_04`.
+- `project.yaml`: `analysis.n_modes = 70` để khớp `*EIGEN-CTRL`.
+
+**Đã mở rộng code generator**:
+- `ElasticLink` schema + Excel reader/template đọc `dof_mask`, `angle`, `sd_i`, `sd_j`.
+- MCT writer xuất `*BNDR-GROUP`, `*ELASTICLINK`, `*TS-GROUP`, `*LOADTOMASS`,
+  `*EIGEN-CTRL`.
+- Rectangle đặc xuất `DBUSER ... SB` để khớp Midas export.
+- Tapered section name dùng `section.name`, không dùng `section.id`.
+
+**Đối chiếu sau generate**:
+- Khớp review về count các block chính: 341 node, 254 element, 4 boundary groups,
+  2 `*SECTION`, 6 `*TS-GROUP`, 20 `*ELASTICLINK`, 22 `*RIGIDLINK`,
+  2 `*LOADTOMASS`, 1 `*EIGEN-CTRL`.
+- `*NODE` và `*ELEMENT` khớp ID + value với review.
+
+**Chưa cập nhật / cần owner xác nhận**:
+- Review có raw dynamic case HSLM-A1 250 km/h: `*TFUNCTION` 6460 dòng,
+  `*THLDCASE` 3 dòng, `*DYN-NLOAD` 85 dòng. Chưa đưa vào generator vì project
+  hiện vẫn thiếu train catalog/schema để sinh lại có kiểm soát. Cần xác nhận có
+  muốn copy raw block này như một case tạm thời hay chờ pipeline dynamic đúng.
+
+**Verify**:
+- `vbdyn generate examples\hcm_cg --target midas` PASS.
+- `vbdyn validate examples\hcm_cg` PASS bridge/schema/support; FAIL duy nhất `Trains`.
+- `pytest tests\unit -q`: **55/55 PASS**.
+- `ruff check src tests`, `ruff format --check src tests`, `mypy src`: PASS.
+
+## 2026-06-02 — Sửa hướng cọc, pilecap đặc, taper 01→02
+
+**Bối cảnh**: Review sau khi dựng phần dưới: layout cọc bị nhầm phương dọc/ngang;
+pilecap phải là hình chữ nhật đặc 7.5×10.5, chỉ lấy layer `pilecap`; thân trụ taper
+phải từ mặt cắt nhỏ đến to (`Pier_01 -> Pier_02`) theo chiều dưới lên; chiều dài cọc
+sửa thành 8 m.
+
+**Đã làm**:
+- `workbook_reader.py` + template Excel: thêm cột `dxf_layer` và `dxf_axis_order`
+  (`xy` mặc định, `yx` để đảo trục DXF khi map sang local section Y-Z).
+- `examples/hcm_cg/bridge.xlsx`: `Pilecap` đọc `dxf/Pilecap.dxf` với
+  `dxf_layer=pilecap`, `dxf_axis_order=yx`; section sinh ra đặc, bbox local
+  `Y=7.5 m`, `Z=10.5 m`, không còn `IPOLY` từ các circle cọc; writer xuất
+  built-in `SB , BUILT, 7.5, 10.5` trong `*SECTION`.
+- Layout cọc đổi thành 2 cột dọc cầu `x = pier_x ± 2.25 m` và 3 hàng ngang
+  `y = -3.75, 0, +3.75 m`.
+- Cọc dài 8 m từ đầu cọc `z=-2.5` đến chân cọc `z=-10.5`, chia 4 phần tử 2 m
+  qua các node `...00 -> ...04`.
+- `Pier_Taper` đổi hướng `taper_start_section_id=Pier_01`,
+  `taper_end_section_id=Pier_02`; MCT `OPOLY=YES` là section nhỏ, `OPOLY=NO`
+  là section lớn.
+- Sinh lại `generated/midas/model_base.mct` thành công.
+
+**Verify**:
+- `vbdyn generate examples\hcm_cg --target midas` PASS.
+- `vbdyn validate examples\hcm_cg` PASS bridge/schema/support; FAIL duy nhất
+  `Trains` vì chưa import catalog HSLM/LM71/real train.
+- `pytest tests\unit -q`: **54/54 PASS**.
+- `ruff check src tests`, `ruff format --check src tests`, `mypy src`: PASS.
+
+## 2026-06-02 — HCM-CG base model: bệ, cọc, thân trụ taper
+
+**Bối cảnh**: Midas báo lỗi `Material Name` quá 16 ký tự và owner yêu cầu bổ sung
+mô hình phần dưới: bệ `1000->1001 ... 6000->6001`, cọc theo `Pilecap.dxf`, đầu cọc
+rigid link vào đáy bệ, thân trụ taper `1001->1005 ... 6001->6005`, boundary support
+tại chân cọc.
+
+**Đã làm**:
+- `integrations/midas/mct/writer.py`: xuất tên vật liệu bằng `material.id` ngắn
+  (`C50`, `C40`, `C30`, `CB240T`, `CB400V`, `PC270`) để thỏa giới hạn 16 ký tự của
+  Midas Civil.
+- Mở rộng schema/Excel/writer cho mặt cắt taper: sheet `Sections` có
+  `taper_start_section_id`, `taper_end_section_id`; writer sinh `SECT=..., TAPERED`
+  với cặp polygon `YES/NO`.
+- Cập nhật `examples/hcm_cg/bridge.xlsx`: 301 node, 254 element, 6 material,
+  9 section. Có 6 bệ, 24 phần tử thân trụ taper, 144 phần tử cọc, 36 support tại
+  chân cọc, 6 rigid links từ node đáy bệ tới các node đầu cọc.
+- Mặt cắt: `Pilecap` lấy từ `dxf/Pilecap.dxf`; `Pile_D1500` xuất DBUSER tròn đặc;
+  `Pier_Taper` dùng `Pier_02` ở đáy và `Pier_01` ở đỉnh theo chiều element từ dưới
+  lên.
+- Sinh lại `examples/hcm_cg/generated/midas/model_base.mct` và manifest thành công.
+
+**Giả định cần nhớ**:
+- Chiều dài cọc lấy từ `1_du_an/hcm_cg/input_parameters.yaml`: 55 m; mỗi cọc chia
+  4 phần tử, node từ trên xuống dưới.
+- Tọa độ cọc lấy theo 6 tâm circle trong `Pilecap.dxf`.
+- `Pilecap.dxf` đang được đọc như section polygon chữ nhật có 6 lỗ tròn; nếu file này
+  thực ra là mặt bằng bệ chứ không phải mặt cắt, cần thay DXF mặt cắt bệ riêng.
+- Chưa thêm liên kết gối/dầm chính với trụ; phần này cần dữ liệu bearing/link riêng.
+
+**Verify**:
+- `vbdyn generate examples\hcm_cg --target midas` PASS.
+- `vbdyn validate examples\hcm_cg` PASS bridge/schema/support; FAIL duy nhất `Trains`
+  vì chưa import catalog HSLM/LM71/real train.
+- `pytest tests\unit -q`: **51/51 PASS**.
+- `ruff check src tests`, `ruff format --check src tests`, `mypy src`: PASS.
+
+## 2026-06-01 — Static load blocks cho MCT writer
+
+**Bối cảnh**: v0.2 còn thiếu load blocks. File mẫu
+`3_ho_so_tham_khao/template_mct/16 Eurocode Rail loads Final.mct` có đủ cú pháp
+`*STLDCASE`, `*USE-STLD`, `*SELFWEIGHT`, `*BEAMLOAD`; chưa có sample cục bộ cho
+`*EIGEN-CTRL` nên không đoán field layout modal.
+
+**Đã làm**:
+- `integrations/midas/mct/writer.py`: sinh `*STLDCASE` với load case `SW` và
+  các case `DW <group>` cho `distributed_masses` hợp lệ.
+- Sinh `*USE-STLD, SW` + `*SELFWEIGHT` (`0, 0, -1`) để model base có dead load
+  self-weight theo vật liệu.
+- `distributed_masses`: resolve `target_group` theo `StructureGroup.id`,
+  `StructureGroup.name`, hoặc `Element.structure_group`; cộng dồn kg/m theo
+  group; quy đổi sang force/length theo unit Midas hiện tại; xuất `*BEAMLOAD`
+  `UNILOAD GZ` trên từng element. Group không có phần tử → warning, bỏ qua.
+- Tests: thêm ca distributed mass → beamload. **49/49 PASS**, ruff format/check
+  + mypy strict sạch.
+
+**Follow-up còn lại**: `*EIGEN-CTRL` modal vẫn chờ file MCT mẫu Midas 2022 (B1);
+`NodalMasses`/`ElementRelease`/`ElasticLinks` vẫn đang warning chưa export.
+
+## 2026-06-01 — STIFF2 mesh vertices + LWPOLYLINE bulge
+
+**Bối cảnh**: follow-up còn mở sau checkpoint ARC/CIRCLE + circle→DBUSER:
+STIFF2 của `*SECT-PSCVALUE` cần lấy từ mesh vertices giống reference Converte;
+DXF reader cần khóa support LWPOLYLINE có bulge cong.
+
+**Đã làm**:
+- `integrations/midas/mct/sections.py`: STIFF2 (`CyP/CyM/CzP/CzM/Cy/Cz`) lấy
+  extents từ `section_model.mesh["vertices"]` sau khi trừ centroid, fallback về
+  `outer_boundary` nếu mesh không có vertices. Đây là hành vi của
+  `4_cong_cu/rm2midas/src/pipeline/step_020_json_to_mct.py`.
+- `importers/dxf/section_reader.py`: xử lý trực tiếp `LWPOLYLINE` bằng
+  `entity.get_points("xyb")`; cạnh có `bulge` được chuyển sang arc qua
+  `ezdxf.math.bulge_to_arc` rồi chia theo `arc_angle_deg` (mặc định 10°).
+- Tests: thêm 2 ca — STIFF2 ưu tiên mesh vertices; LWPOLYLINE bulge=1 tạo vòng
+  tròn D=2 m và chia đúng số đoạn theo góc. **48/48 PASS**, ruff format/check +
+  mypy strict sạch.
+
+**Follow-up còn lại**: mở rộng writer `*STLDCASE`/`*SELFWEIGHT`/`*BEAMLOAD` (DW)
+và `*EIGEN-CTRL`; dựng model 5 nhịp HCM-CG thật từ `1_du_an/hcm_cg/input_parameters.yaml`.
+
 ## 2026-06-01 — ARC chia theo góc (10°) + detect_circle→DBUSER
 
 **Quyết định** (theo yêu cầu owner sau khi xác nhận MG_01 hiển thị đúng trong Midas):
@@ -35,7 +619,7 @@ nhầm tròn).
 
 **Bối cảnh**: Midas không hiển thị mặt cắt vì writer phát `SHAPE=GEN` mà **thiếu
 OPOLY** (section chỉ có A/Iy/Iz/J, không polygon → đi nhánh fallback). Owner xác
-nhận nguồn mặt cắt = file DXF (`projects/hcm_cg/dxf/MG_01.dxf`).
+nhận nguồn mặt cắt = file DXF (`1_du_an/hcm_cg/dxf/MG_01.dxf`).
 
 **Quyết định** (qua AskUserQuestion):
 - Section tham chiếu DXF qua **cột `dxf_file`** trong sheet Sections.
@@ -73,7 +657,7 @@ port `detect_circle`→DBUSER cho cọc tròn.
 
 **Bối cảnh**: code đã đi trước tracking docs (4 commit v0.2 chưa log). Phiên này
 đồng bộ docs + research thêm sub girder cho tải tàu + đối chiếu pipeline mặt cắt với
-code tham khảo `refer/020_Chuyển_json_sang_mct_và_gan_mat_cat_V4.py`.
+code tham khảo `3_ho_so_tham_khao/020_Chuyển_json_sang_mct_và_gan_mat_cat_V4.py`.
 
 **Đã log các commit v0.2 (trước đó chưa ghi)**:
 - `538f544` feat(v0.2): MCT generator đầu tiên (writer + generator + CLI `generate --target midas`).
@@ -102,7 +686,7 @@ code tham khảo `refer/020_Chuyển_json_sang_mct_và_gan_mat_cat_V4.py`.
   nhánh polygon mới được cover bằng `test_mct_generation.py` (rectangle), chưa chạy trên
   dầm hộp thật.
 
-**Research sub girder (chi tiết → `projects/hcm_cg/SUB_GIRDER_RESEARCH.md`)**:
+**Research sub girder (chi tiết → `1_du_an/hcm_cg/SUB_GIRDER_RESEARCH.md`)**:
 - `*LINELANE` template: track **tĩnh** Eurocode = element-list + ECC ngang trên phần tử
   có sẵn (KHÔNG cần sub girder). Sub girder 601..785 chỉ cần khi dùng Train Load Generator
   (time-history **động**) — đúng strategy mặc định HCM-CG.
@@ -110,7 +694,7 @@ code tham khảo `refer/020_Chuyển_json_sang_mct_và_gan_mat_cat_V4.py`.
   `*DYN-NLOAD` (+ `*MOVE-CTRL`/`*MVLDCASE` cho moving load tĩnh). Field layout vẫn cần file
   mẫu (B1).
 
-**Liên kết research vào repo**: thêm trỏ tới `projects/hcm_cg/` (MODEL_UNDERSTANDING,
+**Liên kết research vào repo**: thêm trỏ tới `1_du_an/hcm_cg/` (MODEL_UNDERSTANDING,
 SUB_GIRDER_RESEARCH, input_parameters.yaml) trong `CLAUDE.md` §8 + `PROJECT_STATUS.md`.
 
 **Lý do**: tránh repo lệch khi chuyển máy/agent; chốt rằng pipeline mặt cắt đang theo
@@ -182,10 +766,10 @@ SUB_GIRDER_RESEARCH, input_parameters.yaml) trong `CLAUDE.md` §8 + `PROJECT_STA
 - Template `bridge.xlsx`: 11 sheets (Nodes/Elements/Materials/Sections/Supports/ElasticLinks/RigidLinks/NodalMasses/DistributedMasses/StructureGroups/Tracks) + `_README` sheet với hướng dẫn tiếng Việt. Đơn vị nội bộ SI; exporter sẽ tự đổi.
 - Project.yaml: comment tiếng Việt dẫn dắt từng block (standards_profile, tcvn13594_versions, design, dynamic, velocity_range, analysis, targets, checks, report).
 
-**Đã reverse-engineer MCT mẫu** (`refer/template_mct/16 Eurocode Rail loads Final.mct`, Midas 9.1.0, 2534 dòng, 36 sections):
+**Đã reverse-engineer MCT mẫu** (`3_ho_so_tham_khao/template_mct/16 Eurocode Rail loads Final.mct`, Midas 9.1.0, 2534 dòng, 36 sections):
 - File mẫu dùng pattern **moving load Eurocode** (`*MVLDCODE=EUROCODE`, `*LINELANE`, `*VEHICLE`, `*MVLDCASE(EURO)`, `*MV-DYFG`, `*MOVE-CTRL`) — đây là **static moving load + DAF** (giải pháp cho LM71/SW/0/SW/2), KHÔNG phải dynamic time-history.
 - Để làm **dynamic transient HSLM** (theo plan: `moving_load_strategy: time_history_function`) cần thêm `*EIGEN-CTRL`, `*TIME-HISTORY-FUNCTION`, `*TIME-HISTORY-LOAD`, `*TIME-HISTORY-CASE`, `*MODAL-DAMPING`. v0.2 sẽ research thêm sample MCT có time-history.
-- Tham khảo `refer/Converte_RM_to_Midas` (private, PhamVu1505): pipeline 12 steps (010-095), `sectionproperties` lib để tính Area/Iy/Iz/J/Asy/Asz từ outer boundary, ECC→Rigid Link conversion, STIFF3 max Euclidean distance from centroid (đã validated 100% match Midas SPC trên 38 file).
+- Tham khảo `4_cong_cu/rm2midas` (private, PhamVu1505): pipeline 12 steps (010-095), `sectionproperties` lib để tính Area/Iy/Iz/J/Asy/Asz từ outer boundary, ECC→Rigid Link conversion, STIFF3 max Euclidean distance from centroid (đã validated 100% match Midas SPC trên 38 file).
 
 **Blockers**:
 - B1 (vẫn open): cần thêm MCT mẫu có **time-history block** + có HSLM time function — để v0.2 sinh được full dynamic case.
@@ -283,7 +867,7 @@ checklist.
   + TASK_NEXT + SCOPE riêng).
 
 **Đã làm**:
-- Tạo `D:\2026\09_Dynamic_analysis_for_high_speed_railway_bridges\vbridge-dyn\`
+- Tạo `C:\Backup\D\2026\09_Tinh_toan_cau_duong_sat_toc_do_cao\4_cong_cu\vbridge-dyn\`
 - Tạo `README.md`, `CLAUDE.md`, `PROJECT_STATUS.md`, `TASK_LOG.md`
 
 ---

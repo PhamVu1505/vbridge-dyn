@@ -8,18 +8,31 @@ blocks depend on the confirmed dynamic load path and are layered on top later.
 from __future__ import annotations
 
 import math
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from vbridge_dyn.core.schemas.boundary import ElasticLink
 from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.project import Project
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
 from vbridge_dyn.integrations.midas.mct.sections import (
     CircleInfo,
+    RectangleInfo,
     SectionPolygonUnavailableError,
     build_polygon_section_lines,
+    build_tapered_section_lines,
     detect_circle,
+    detect_solid_rectangle,
+)
+from vbridge_dyn.integrations.midas.mct.tendons import (
+    build_tendon_mct_lines,
+    tendon_material_id,
+    tendon_material_line,
+)
+from vbridge_dyn.integrations.midas.mct.time_dependent import (
+    build_time_dependent_concrete_lines,
 )
 
 _GRAVITY = 9.806
@@ -31,21 +44,50 @@ class _MctIdMaps:
     section_ids: dict[str, int]
 
 
-def write_base_model_mct(project: Project, path: Path) -> list[str]:
+@dataclass(frozen=True)
+class _DistributedLoadRecord:
+    case_name: str
+    element_ids: list[int]
+    load_value: float
+
+
+def write_base_model_mct(
+    project: Project,
+    path: Path,
+    *,
+    project_folder: Path | None = None,
+) -> list[str]:
     """Write a base Midas Civil model `.mct` and return generation warnings."""
     bridge = project.bridge
     maps = _build_id_maps(bridge)
     warnings = _collect_warnings(bridge)
+    tendon_mat_id = tendon_material_id(project, len(maps.material_ids))
 
     lines: list[str] = []
     _append_header(lines, project)
     _append_nodes(lines, bridge)
     _append_elements(lines, bridge, maps)
     _append_groups(lines, bridge)
-    _append_materials(lines, bridge, maps)
+    _append_boundary_groups(lines, bridge)
+    _append_load_groups(lines, bridge)
+    _append_materials(lines, bridge, maps, project=project, tendon_mat_id=tendon_mat_id)
+    lines.extend(build_time_dependent_concrete_lines(project, bridge, maps.material_ids, warnings))
     _append_sections(lines, bridge, maps, warnings)
+    _append_tapered_section_groups(lines, bridge)
+    if tendon_mat_id is not None:
+        lines.extend(
+            build_tendon_mct_lines(
+                project,
+                project_folder=project_folder,
+                tendon_material_id=tendon_mat_id,
+                warnings=warnings,
+            )
+        )
     _append_constraints(lines, bridge)
+    _append_elastic_links(lines, bridge, project)
     _append_rigid_links(lines, bridge)
+    _append_static_loads(lines, project, warnings)
+    _append_eigen_ctrl(lines, project)
     lines.append("*ENDDATA")
     lines.append("")
 
@@ -62,14 +104,10 @@ def _build_id_maps(bridge: Bridge) -> _MctIdMaps:
 
 def _collect_warnings(bridge: Bridge) -> list[str]:
     warnings: list[str] = []
-    if bridge.elastic_links:
-        warnings.append("ElasticLinks chưa được export trong MCT v0.2-alpha.")
     if bridge.element_releases:
         warnings.append("ElementRelease chưa được export trong MCT v0.2-alpha.")
     if bridge.nodal_masses:
         warnings.append("NodalMasses chưa được export trong MCT v0.2-alpha.")
-    if bridge.distributed_masses:
-        warnings.append("DistributedMasses chưa được export trong MCT v0.2-alpha.")
     return warnings
 
 
@@ -98,7 +136,7 @@ def _append_header(lines: list[str], project: Project) -> None:
             "",
             "*STRUCTYPE    ; Structure Type",
             "; iSTYP, iMASS, iSMAS, bMASSOFFSET, bSELFWEIGHT, GRAV, TEMPER, bALIGNBEAM, bALIGNSLAB, bROTRIGID",
-            "     0, 1, 1, NO, NO, 9.806, 0, NO, NO, NO",
+            "     0, 1, 1, NO, YES, 9.806, 0, NO, NO, NO",
             "",
             "*REBAR-MATL-CODE    ; Rebar Material Code",
             "; CONC_CODE, CONC_MDB, SRC_CODE, SRC_MDB",
@@ -144,6 +182,31 @@ def _append_groups(lines: list[str], bridge: Bridge) -> None:
     lines.append("")
 
 
+def _append_boundary_groups(lines: list[str], bridge: Bridge) -> None:
+    names = sorted(
+        {group.name or group.id for group in bridge.boundary_groups}
+        | {support.boundary_group for support in bridge.supports if support.boundary_group}
+        | {link.boundary_group for link in bridge.elastic_links if link.boundary_group}
+        | {link.boundary_group for link in bridge.rigid_links if link.boundary_group}
+    )
+    if not names:
+        return
+    lines.extend(["*BNDR-GROUP    ; Boundary Group", "; NAME, AUTOTYPE"])
+    for name in names:
+        lines.append(f" {_text(name)}, 0")
+    lines.append("")
+
+
+def _append_load_groups(lines: list[str], bridge: Bridge) -> None:
+    names = sorted({group.name or group.id for group in bridge.load_groups} | {"SelfWeight"})
+    if not names:
+        return
+    lines.extend(["*LOAD-GROUP    ; Load Group", "; NAME"])
+    for name in names:
+        lines.append(f" {_text(name)}")
+    lines.append("")
+
+
 def _group_records(bridge: Bridge) -> list[tuple[str, list[int], list[int]]]:
     by_name: dict[str, tuple[set[int], set[int]]] = {}
 
@@ -171,7 +234,14 @@ def _group_records(bridge: Bridge) -> list[tuple[str, list[int], list[int]]]:
     return records
 
 
-def _append_materials(lines: list[str], bridge: Bridge, maps: _MctIdMaps) -> None:
+def _append_materials(
+    lines: list[str],
+    bridge: Bridge,
+    maps: _MctIdMaps,
+    *,
+    project: Project,
+    tendon_mat_id: int | None,
+) -> None:
     lines.extend(
         [
             "*MATERIAL    ; Material",
@@ -181,6 +251,8 @@ def _append_materials(lines: list[str], bridge: Bridge, maps: _MctIdMaps) -> Non
     )
     for material in sorted(bridge.materials, key=lambda item: maps.material_ids[item.id]):
         lines.append(_material_line(material, maps.material_ids[material.id]))
+    if tendon_mat_id is not None:
+        lines.append(tendon_material_line(project, tendon_mat_id))
     lines.append("")
     lines.extend(
         ["*MATL-COLOR", "; iMAT, W_R, W_G, W_B, HF_R, HF_G, HF_B, HE_R, HE_G, HE_B, bBLEND, FACT"]
@@ -188,6 +260,10 @@ def _append_materials(lines: list[str], bridge: Bridge, maps: _MctIdMaps) -> Non
     for material in sorted(bridge.materials, key=lambda item: maps.material_ids[item.id]):
         mid = maps.material_ids[material.id]
         lines.append(f" {mid:>4}, 255,   0,   0,    0, 255,   0,    0,   0, 255,  NO, 0.5")
+    if tendon_mat_id is not None:
+        lines.append(
+            f" {tendon_mat_id:>4}, 255, 127,   0,    0, 255, 127,    0,   0, 255,  NO, 0.5"
+        )
     lines.append("")
 
 
@@ -195,8 +271,9 @@ def _material_line(material: Material, midas_id: int) -> str:
     elast_kn_m2 = material.E / 1000.0
     unit_weight_kn_m3 = material.rho * _GRAVITY / 1000.0
     mat_type = material.kind if material.kind in {"CONC", "STEEL", "SRC"} else "USER"
+    name = _midas_name(material.id, limit=16)
     return (
-        f" {midas_id:>4}, {mat_type:<5}, {_text(material.name):<18}, 0, 0, , C, NO, "
+        f" {midas_id:>4}, {mat_type:<5}, {name:<16}, 0, 0, , C, NO, "
         f"{_num(material.damping_ratio)}, 2, {_num(elast_kn_m2)}, {_num(material.nu)}, "
         f"{_num(material.alpha_T)}, {_num(unit_weight_kn_m3)}, 0"
     )
@@ -211,24 +288,41 @@ def _append_sections(
     materials_by_id = {material.id: material for material in bridge.materials}
     ordered = sorted(bridge.sections, key=lambda item: maps.section_ids[item.id])
 
-    dbuser: list[tuple[FrameSection, CircleInfo]] = []
+    builtin: list[tuple[FrameSection, CircleInfo | RectangleInfo]] = []
     pscvalue: list[FrameSection] = []
     for section in ordered:
-        circle = detect_circle(section.outer_boundary, section.holes) if section.outer_boundary else None
+        circle = (
+            detect_circle(section.outer_boundary, section.holes) if section.outer_boundary else None
+        )
         if circle is not None:
-            dbuser.append((section, circle))
+            builtin.append((section, circle))
+            continue
+        rectangle = (
+            detect_solid_rectangle(section.outer_boundary, section.holes)
+            if section.outer_boundary
+            else None
+        )
+        if rectangle is not None:
+            builtin.append((section, rectangle))
         else:
             pscvalue.append(section)
 
-    if dbuser:
-        _append_dbuser_sections(lines, dbuser, maps)
+    if builtin:
+        _append_builtin_sections(lines, builtin, maps)
     if pscvalue:
-        _append_pscvalue_sections(lines, pscvalue, materials_by_id, maps, warnings)
+        _append_pscvalue_sections(
+            lines,
+            pscvalue,
+            bridge_sections=ordered,
+            materials_by_id=materials_by_id,
+            maps=maps,
+            warnings=warnings,
+        )
 
 
-def _append_dbuser_sections(
+def _append_builtin_sections(
     lines: list[str],
-    dbuser: list[tuple[FrameSection, CircleInfo]],
+    builtin: list[tuple[FrameSection, CircleInfo | RectangleInfo]],
     maps: _MctIdMaps,
 ) -> None:
     lines.extend(
@@ -238,8 +332,11 @@ def _append_dbuser_sections(
             "; [DATA1] : 1, DB, NAME or 2, D1, D2, D3, D4, D5, D6",
         ],
     )
-    for section, circle in dbuser:
-        lines.append(_dbuser_line(section, maps.section_ids[section.id], circle))
+    for section, shape in builtin:
+        if isinstance(shape, CircleInfo):
+            lines.append(_dbuser_line(section, maps.section_ids[section.id], shape))
+        else:
+            lines.extend(_solid_rectangle_lines(section, maps.section_ids[section.id], shape))
     lines.append("")
 
 
@@ -247,20 +344,33 @@ def _dbuser_line(section: FrameSection, midas_id: int, circle: CircleInfo) -> st
     name = _text(section.name)
     prefix = section.midas_offset or "CC"
     if circle.kind == "P":
-        data = (
-            f"P  , 2, {_num(circle.diameter)}, {_num(circle.thickness)}, "
-            "0, 0, 0, 0, 0, 0, 0, 0"
-        )
+        data = f"P  , 2, {_num(circle.diameter)}, {_num(circle.thickness)}, 0, 0, 0, 0, 0, 0, 0, 0"
     else:
         data = f"SR , 2, {_num(circle.diameter)}, 0, 0, 0, 0, 0, 0, 0, 0, 0"
-    return (
-        f"   {midas_id}, DBUSER, {name:<18}, {prefix}, 0, 0, 0, 0, 0, 0, YES, NO, {data}"
-    )
+    return f"   {midas_id}, DBUSER, {name:<18}, {prefix}, 0, 0, 0, 0, 0, 0, YES, NO, {data}"
+
+
+def _solid_rectangle_lines(
+    section: FrameSection,
+    midas_id: int,
+    rectangle: RectangleInfo,
+) -> list[str]:
+    prefix = section.midas_offset or "CC"
+    name = _text(section.name)
+    return [
+        (
+            f"   {midas_id}, DBUSER, {name:<18}, {prefix}, 0, 0, 0, 0, 0, 0, YES, NO, "
+            f"SB , 2, {_num(rectangle.width_y)}, {_num(rectangle.depth_z)}, "
+            "0, 0, 0, 0, 0, 0, 0, 0"
+        ),
+    ]
 
 
 def _append_pscvalue_sections(
     lines: list[str],
     sections: list[FrameSection],
+    *,
+    bridge_sections: list[FrameSection],
     materials_by_id: dict[str, Material],
     maps: _MctIdMaps,
     warnings: list[str],
@@ -275,14 +385,57 @@ def _append_pscvalue_sections(
         ],
     )
     for section in sections:
-        _append_section(
-            lines,
-            section,
-            materials_by_id[section.material_id],
-            maps.section_ids[section.id],
-            warnings,
-        )
+        if section.taper_start_section_id and section.taper_end_section_id:
+            _append_tapered_section(
+                lines,
+                section,
+                bridge_sections=bridge_sections,
+                materials_by_id=materials_by_id,
+                maps=maps,
+                warnings=warnings,
+            )
+        else:
+            _append_section(
+                lines,
+                section,
+                materials_by_id[section.material_id],
+                maps.section_ids[section.id],
+                warnings,
+            )
     lines.append("")
+
+
+def _append_tapered_section(
+    lines: list[str],
+    section: FrameSection,
+    *,
+    bridge_sections: list[FrameSection],
+    materials_by_id: dict[str, Material],
+    maps: _MctIdMaps,
+    warnings: list[str],
+) -> None:
+    sections_by_id = {item.id: item for item in bridge_sections}
+    assert section.taper_start_section_id is not None
+    assert section.taper_end_section_id is not None
+    start_section = sections_by_id[section.taper_start_section_id]
+    end_section = sections_by_id[section.taper_end_section_id]
+    try:
+        lines.extend(
+            build_tapered_section_lines(
+                section,
+                start_section,
+                end_section,
+                materials_by_id[section.material_id],
+                maps.section_ids[section.id],
+            ),
+        )
+    except SectionPolygonUnavailableError as exc:
+        warnings.append(f"Section {section.id}: {exc}; tapered section chưa export.")
+    except Exception as exc:
+        warnings.append(
+            f"Section {section.id}: lỗi sinh tapered section ({type(exc).__name__}: {exc}); "
+            "tapered section chưa export."
+        )
 
 
 def _append_section(
@@ -335,6 +488,58 @@ def _append_section(
     )
 
 
+def _append_tapered_section_groups(lines: list[str], bridge: Bridge) -> None:
+    tapered_sections = {
+        section.id: section
+        for section in bridge.sections
+        if section.taper_start_section_id and section.taper_end_section_id
+    }
+    if not tapered_sections:
+        return
+
+    records: list[tuple[str, list[int]]] = []
+    group_names = sorted(
+        {element.structure_group for element in bridge.elements if element.structure_group}
+    )
+    for group_name in group_names:
+        group_elements = [
+            element for element in bridge.elements if element.structure_group == group_name
+        ]
+        if group_elements and all(
+            element.section_id in tapered_sections for element in group_elements
+        ):
+            records.append((group_name, sorted(element.id for element in group_elements)))
+
+    grouped_section_records: dict[str, list[int]] = {}
+    for element in bridge.elements:
+        section = tapered_sections.get(element.section_id)
+        if section is None:
+            continue
+        grouped_section_records.setdefault(_taper_group_name(section), []).append(element.id)
+    for name, element_ids in sorted(grouped_section_records.items()):
+        if not any(set(element_ids).issubset(set(record_ids)) for _, record_ids in records):
+            records.append((name, sorted(element_ids)))
+
+    if not records:
+        return
+    lines.extend(
+        [
+            "*TS-GROUP    ; Tapered Section Group",
+            "; NAME, ELEM_LIST, ZVAR, ZEXP, ZFROM, ZDIST, YVAR, YEXP, YFROM, YDIST, iSCM",
+        ],
+    )
+    for group_name, element_ids in records:
+        lines.append(
+            f"{_text(group_name)}, {_mct_id_list(element_ids)},  LINEAR, , , ,  LINEAR, , , , 0"
+        )
+    lines.append("")
+
+
+def _taper_group_name(section: FrameSection) -> str:
+    name = section.name or section.id
+    return name[4:] if name.startswith("Box-") else name
+
+
 def _section_half_width(section: FrameSection) -> float:
     # Fallback stress points for VALUE/GEN sections when polygon geometry is not yet available.
     return max(math.sqrt(section.Iz / section.A), 0.001)
@@ -350,8 +555,38 @@ def _append_constraints(lines: list[str], bridge: Bridge) -> None:
     lines.extend(["*CONSTRAINT    ; Supports", "; NODE_LIST, CONST(Dx,Dy,Dz,Rx,Ry,Rz), GROUP"])
     for support in sorted(bridge.supports, key=lambda item: item.node_id):
         mask = "".join(str(value) for value in support.constraint)
-        lines.append(f"   {support.node_id}, {mask}, ")
+        lines.append(f"   {support.node_id}, {mask}, {_text(support.boundary_group)}")
     lines.append("")
+
+
+def _append_elastic_links(lines: list[str], bridge: Bridge, project: Project) -> None:
+    if not bridge.elastic_links:
+        return
+    lines.extend(
+        [
+            "*ELASTICLINK    ; Elastic Link",
+            "; iEL, NODE1, NODE2, LINK, ANGLE, SDx, SDy, SDz, SRx, SRy, SRz, [DATA], GROUP",
+        ],
+    )
+    for link in sorted(bridge.elastic_links, key=lambda item: item.id):
+        flags = ["YES" if char == "1" else "NO" for char in link.dof_mask]
+        values = _elastic_link_values(link, project)
+        lines.append(
+            f" {link.id:>5}, {link.n1:>5}, {link.n2:>5}, GEN  , {_num(link.angle):>5}, "
+            f"{', '.join(flags)}, {', '.join(_num(value) for value in values)}, "
+            f"NO, {_num(link.sd_i)}, {_num(link.sd_j)}, {_text(link.boundary_group)}"
+        )
+    lines.append("")
+
+
+def _elastic_link_values(link: ElasticLink, project: Project) -> list[float]:
+    force_n = _force_unit_newton(project.targets.midas_civil.units.get("force", "kN"))
+    length_m = _length_unit_meter(project.targets.midas_civil.units.get("length", "m"))
+    translational = [link.kx, link.ky, link.kz]
+    rotational = [link.krx, link.kry, link.krz]
+    return [value * length_m / force_n for value in translational] + [
+        value / (force_n * length_m) for value in rotational
+    ]
 
 
 def _append_rigid_links(lines: list[str], bridge: Bridge) -> None:
@@ -359,12 +594,160 @@ def _append_rigid_links(lines: list[str], bridge: Bridge) -> None:
         return
     lines.extend(["*RIGIDLINK    ; Rigid Link", "; M-NODE, DOF, S-NODE LIST, GROUP"])
     for link in sorted(bridge.rigid_links, key=lambda item: item.id):
-        lines.append(f"   {link.master}, {link.dof_mask}, {_id_list(link.slaves)}, ")
+        lines.append(
+            f"   {link.master}, {link.dof_mask}, {_id_list(link.slaves)}, {_text(link.boundary_group)}"
+        )
     lines.append("")
+
+
+def _append_static_loads(lines: list[str], project: Project, warnings: list[str]) -> None:
+    distributed_loads = _distributed_load_records(project, warnings)
+    lines.extend(
+        ["*STLDCASE    ; Static Load Cases", "; LCNAME, LCTYPE, DESC", "   SelfWeight, D , "]
+    )
+    for record in distributed_loads:
+        lines.append(f"   {record.case_name}, D , ")
+    lines.append("")
+    _append_load_to_mass(lines, distributed_loads)
+
+    lines.extend(
+        [
+            "*USE-STLD, SelfWeight",
+            "",
+            "*SELFWEIGHT    ; Self Weight",
+            "; X, Y, Z, GROUP",
+            "0, 0, -1, SelfWeight",
+            "",
+            "; End of data for load case [SelfWeight] -------------------------",
+            "",
+        ],
+    )
+    for record in distributed_loads:
+        lines.extend(
+            [
+                f"*USE-STLD, {record.case_name}",
+                "",
+                "*BEAMLOAD    ; Element Beam Loads",
+                "; ELEM_LIST, CMD, TYPE, DIR, bPROJ, [ECCEN], [VALUE], GROUP",
+                "; [VALUE]       : D1, P1, D2, P2, D3, P3, D4, P4",
+            ],
+        )
+        load = _num(record.load_value)
+        for element_id in record.element_ids:
+            lines.append(
+                f"   {element_id}, BEAM   , UNILOAD, GZ, NO , NO, aDir[1], , , , "
+                f"0, {load}, 1, {load}, 0, 0, 0, 0, , NO, 0, 0, NO, "
+            )
+        lines.extend(
+            [
+                "",
+                f"; End of data for load case [{record.case_name}] -------------------------",
+                "",
+            ],
+        )
+
+
+def _append_load_to_mass(lines: list[str], distributed_loads: list[_DistributedLoadRecord]) -> None:
+    if not distributed_loads:
+        return
+    lines.extend(["*LOADTOMASS    ; Load to Mass", "; DIR, bNodal, bBeam, bPressure, bFloor, GRAV"])
+    lines.append("   XYZ, YES, YES, YES, YES, 9.806")
+    for record in distributed_loads:
+        lines.append(f"   {record.case_name}, 1")
+    lines.append("")
+
+
+def _append_eigen_ctrl(lines: list[str], project: Project) -> None:
+    lines.extend(["*EIGEN-CTRL    ; Eigenvalue Analysis Control", "; METHOD, NMODE, FREQ, ..."])
+    lines.append(f"   LANCZOS, {project.analysis.n_modes}, 20, 1, 1e-10, NO, 0, 0, YES")
+    lines.append("")
+
+
+def _distributed_load_records(
+    project: Project, warnings: list[str]
+) -> list[_DistributedLoadRecord]:
+    bridge = project.bridge
+    if not bridge.distributed_masses:
+        return []
+
+    element_ids_by_group = _element_ids_by_group(bridge)
+    mass_by_group: dict[str, float] = {}
+    for item in bridge.distributed_masses:
+        mass_by_group[item.target_group] = mass_by_group.get(item.target_group, 0.0) + (
+            item.mass_per_length
+        )
+
+    records: list[_DistributedLoadRecord] = []
+    for group_name in sorted(mass_by_group):
+        element_ids = sorted(element_ids_by_group.get(group_name, set()))
+        if not element_ids:
+            warnings.append(
+                f"DistributedMass target_group='{group_name}' không có phần tử; bỏ qua BEAMLOAD."
+            )
+            continue
+        value = -_mass_per_length_to_target_force_per_length(mass_by_group[group_name], project)
+        records.append(
+            _DistributedLoadRecord(
+                case_name=_load_case_name("DW", group_name),
+                element_ids=element_ids,
+                load_value=value,
+            ),
+        )
+    return records
+
+
+def _element_ids_by_group(bridge: Bridge) -> dict[str, set[int]]:
+    by_group: dict[str, set[int]] = {}
+
+    def add(name: str, element_ids: list[int]) -> None:
+        if not name:
+            return
+        by_group.setdefault(name, set()).update(element_ids)
+
+    for group in bridge.structure_groups:
+        add(group.id, group.element_ids)
+        add(group.name, group.element_ids)
+    for element in bridge.elements:
+        add(element.structure_group, [element.id])
+    return by_group
+
+
+def _mass_per_length_to_target_force_per_length(mass_per_length: float, project: Project) -> float:
+    units = project.targets.midas_civil.units
+    force_n = _force_unit_newton(units.get("force", "kN"))
+    length_m = _length_unit_meter(units.get("length", "m"))
+    return mass_per_length * _GRAVITY * length_m / force_n
+
+
+def _load_case_name(prefix: str, name: str) -> str:
+    text = _text(name)
+    return f"{prefix} {text}"[:40].strip()
 
 
 def _id_list(values: list[int]) -> str:
     return " ".join(str(value) for value in values)
+
+
+def _mct_id_list(values: list[int]) -> str:
+    if not values:
+        return ""
+    sorted_values = sorted(values)
+    if len(sorted_values) == 1:
+        return str(sorted_values[0])
+    step = sorted_values[1] - sorted_values[0]
+    if step > 0 and all(
+        sorted_values[i] - sorted_values[i - 1] == step for i in range(1, len(sorted_values))
+    ):
+        if step == 1:
+            return f"{sorted_values[0]}to{sorted_values[-1]}"
+        return f"{sorted_values[0]}to{sorted_values[-1]}by{step}"
+
+    by_tail: dict[int, list[int]] = {}
+    for value in sorted_values:
+        by_tail.setdefault(value % 100000, []).append(value)
+    if 1 < len(by_tail) < len(sorted_values) and all(len(ids) > 1 for ids in by_tail.values()):
+        return " ".join(_mct_id_list(ids) for _, ids in sorted(by_tail.items()))
+    return _id_list(sorted_values)
 
 
 def _num(value: float) -> str:
@@ -373,6 +756,16 @@ def _num(value: float) -> str:
 
 def _text(value: str) -> str:
     return value.replace(",", " ").strip()
+
+
+def _midas_name(value: str, *, limit: int) -> str:
+    """ASCII-safe name for Midas fields with hard character limits."""
+    normalized = unicodedata.normalize("NFKD", _text(value))
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    cleaned = " ".join(ascii_text.split())
+    if not cleaned:
+        cleaned = "Unnamed"
+    return cleaned[:limit]
 
 
 def _force_token(value: str) -> str:
@@ -385,11 +778,31 @@ def _force_token(value: str) -> str:
     raise ValueError(msg)
 
 
+def _force_unit_newton(value: str) -> float:
+    normalized = value.lower()
+    if normalized == "kn":
+        return 1000.0
+    if normalized == "n":
+        return 1.0
+    msg = f"Unsupported Midas force unit: {value}"
+    raise ValueError(msg)
+
+
 def _length_token(value: str) -> str:
     normalized = value.lower()
     if normalized == "m":
         return "M"
     if normalized == "mm":
         return "MM"
+    msg = f"Unsupported Midas length unit: {value}"
+    raise ValueError(msg)
+
+
+def _length_unit_meter(value: str) -> float:
+    normalized = value.lower()
+    if normalized == "m":
+        return 1.0
+    if normalized == "mm":
+        return 0.001
     msg = f"Unsupported Midas length unit: {value}"
     raise ValueError(msg)

@@ -42,6 +42,26 @@ def test_outer_and_hole_extracted(tmp_path: Path) -> None:
     assert min(ys) == pytest.approx(-1.0)
 
 
+def test_layer_filter_ignores_pile_circles(tmp_path: Path) -> None:
+    path = tmp_path / "pilecap.dxf"
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    _add_closed(
+        msp,
+        [(-5.25, -3.75), (5.25, -3.75), (5.25, 3.75), (-5.25, 3.75)],
+    )
+    for entity in msp:
+        entity.dxf.layer = "pilecap"
+    msp.add_circle((0.0, 2.25), radius=0.75, dxfattribs={"layer": "pile"})
+    doc.saveas(str(path))
+
+    poly = read_section_polygon(path, layer="pilecap")
+
+    assert len(poly.outer_boundary) == 4
+    assert poly.holes == []
+
+
 def test_mm_units_scaled_to_meters(tmp_path: Path) -> None:
     path = tmp_path / "sec_mm.dxf"
     doc = ezdxf.new("R2010")
@@ -95,6 +115,30 @@ def test_arc_angle_override_changes_segment_count(tmp_path: Path) -> None:
     poly = read_section_polygon(path, arc_angle_deg=30.0)  # 360/30 = 12 đoạn
 
     assert len(poly.outer_boundary) == 12
+
+
+def test_lwpolyline_bulge_tessellated_by_angle(tmp_path: Path) -> None:
+    path = tmp_path / "bulge_circle.dxf"
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    # Hai đoạn LWPOLYLINE bulge=1 tạo thành vòng tròn D=2 m.
+    msp.add_lwpolyline(
+        [(1, 0, 0, 0, 1), (-1, 0, 0, 0, 1)],
+        format="xyseb",
+        close=True,
+    )
+    doc.saveas(str(path))
+
+    poly = read_section_polygon(path, arc_angle_deg=30.0)
+
+    assert len(poly.outer_boundary) == 12
+    xs = [p[0] for p in poly.outer_boundary]
+    ys = [p[1] for p in poly.outer_boundary]
+    assert max(xs) == pytest.approx(1.0, abs=1e-3)
+    assert min(xs) == pytest.approx(-1.0, abs=1e-3)
+    assert max(ys) == pytest.approx(1.0, abs=1e-3)
+    assert min(ys) == pytest.approx(-1.0, abs=1e-3)
 
 
 def test_largest_loop_is_outer(tmp_path: Path) -> None:

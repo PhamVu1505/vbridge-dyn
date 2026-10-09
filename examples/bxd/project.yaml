@@ -1,0 +1,152 @@
+
+# ----------------------------------------------------------
+
+meta:
+  name: "BXD"
+  author: ""
+  description: ""
+  created_at: 2026-06-23
+  schema_version: "1.0"
+  locale: vi-VN
+
+standards_profile: vietnam_tcvn13594
+
+tcvn13594_versions:
+  part_3: "2022"
+  part_4: "2022"   
+  part_5: "2023"
+  part_10: "2023"
+
+design:
+  design_speed_kmh: 350
+  max_analysis_speed_factor: 1.2     # V_max = factor × V_tk
+  track_type: ballastless
+  track_gauge_mm: 1435
+
+dynamic:
+  check_required_method: tcvn13594_dynamic_required
+  damping_method: tcvn13594_3_table_18
+  resonance_check: true
+  time_step_method: erri_d214
+
+velocity_range:
+  v_min_kmh: 140
+  v_max_kmh: 420
+  v_line_design_kmh: 350
+  step_kmh: 5
+  refine_near_resonance: true
+
+analysis:
+  n_modes: 70
+  fmax_target_hz: null      # null = auto: max(30 Hz, 1.5·n0, n3)
+  damping:
+    standard: tcvn13594_3_table_18
+    bridge_type: prestressed_concrete
+  time_step:
+    method: erri_d214
+  integration: modal_superposition
+
+prestress:
+  enabled: true
+  material:
+    name: Strand1860
+    elastic_modulus: 1.95e8   # kN/m²
+    poisson: 0.3
+    thermal: 1.17e-5
+    unit_weight: 78.5         # kN/m³
+  properties:
+    - name: PT_20T15.2_D110
+      area: 0.002800
+      duct_diameter: 0.110
+      friction: 0.25
+      wobble: 0.0066
+      ultimate_strength: 1.86e6
+      yield_strength: 1.64e6
+      anchor_slip_begin: 0.006
+      anchor_slip_end: 0.006
+      angle_disp: 2.64e-5
+  dxf:
+    file: dxf/tendon.dxf
+    property: PT_20T15.2_D110
+    tendon_group: TG-BXD
+    load_group: PS-BXD
+    load_case: Prestress
+    mirror_half_span: true
+    span_group_regex: "^Girder\\d+$"
+    layer_regex: "^\\d{4}$"
+    profile_name_template: "G{span}-T{layer}"
+    curve: SPLINE
+  load:
+    type: FORCE
+    jacking: BOTH
+    begin: 3906.0 # 1395 MPa × 20 × 140 mm² = 3906 kN
+    end: 3906.0 # 1395 MPa × 20 × 140 mm² = 3906 kN
+
+# ----------------------------------------------------------
+# bridge: nhập từ bridge.xlsx — cần điền sheets
+# Nodes / Elements / Materials / Sections / Supports / Tracks / ...
+# ----------------------------------------------------------
+bridge:
+  # Hiện tại để rỗng — workbook_reader sẽ load từ bridge.xlsx
+  # Khi bridge.xlsx có dữ liệu, validate sẽ tự merge vào.
+  nodes: []
+  elements: []
+  materials: []
+  sections: []
+  supports: []
+
+# Đường ray — gắn vào element nào của model
+tracks: []
+
+# Đoàn tàu — import từ trains/*.xlsx (TCVN catalog không ship sẵn)
+trains: []
+
+# Vị trí xuất kết quả (giữa nhịp, đầu cọc, ...)
+result_stations:
+  - id: S1
+    name: "Giữa nhịp 1"
+    target: track
+    track_id: T1
+    track_x: 17.5
+
+targets:
+  midas_civil:
+    enabled: true
+    midas_version: "2022"
+    units: { force: kN, length: m, mass: ton, time: s }
+    export_mode: mct
+    case_split: grouped_by_train
+    output_dir: generated/midas
+    moving_load_strategy: time_history_function
+    time_dependent_concrete:
+      enabled: true
+      code: CEB
+      elasticity_code: CEB-FIP
+      relative_humidity_percent: 80
+      notional_size: 1
+      cement_type: NR
+      age_days: 3
+      strengths:
+        C50: 50000
+        C40: 40000
+        C30: 30000
+  rm_bridge:
+    enabled: false     # bật khi vào Phase 2
+    rm_version: "12.x"
+    export_mode: tcl
+    output_dir: generated/rm_bridge
+
+checks:
+  standards:
+    - tcvn13594_4_dynamic_check
+    - tcvn13594_4_acceleration_limit
+    - tcvn13594_4_deflection_limit
+    - tcvn13594_4_daf
+  cross_check:
+    - en1990_a2_4_4_2
+
+report:
+  template: full_report
+  language: vi-VN
+  engine: reportlab
+  output: "reports/{date}_full_report.pdf"

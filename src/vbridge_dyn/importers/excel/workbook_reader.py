@@ -17,7 +17,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from vbridge_dyn.core.schemas.boundary import ElasticLink, RigidLink, Support
 from vbridge_dyn.core.schemas.bridge import Bridge
 from vbridge_dyn.core.schemas.geometry import Element, Node
-from vbridge_dyn.core.schemas.groups import StructureGroup
+from vbridge_dyn.core.schemas.groups import BoundaryGroup, StructureGroup
 from vbridge_dyn.core.schemas.mass import ElementDistributedMass, NodalMass
 from vbridge_dyn.core.schemas.properties import FrameSection, Material
 from vbridge_dyn.core.schemas.track import Track
@@ -84,6 +84,22 @@ def _resolve_path(base_dir: Path, raw: str) -> Path:
     return candidate if candidate.is_absolute() else (base_dir / candidate)
 
 
+def _apply_dxf_axis_order(
+    outer: list[tuple[float, float]],
+    holes: list[list[tuple[float, float]]],
+    axis_order: str | None,
+) -> tuple[list[tuple[float, float]], list[list[tuple[float, float]]]]:
+    if axis_order in (None, "", "xy"):
+        return outer, holes
+    if axis_order in {"yx", "swap"}:
+        return (
+            [(z, y) for y, z in outer],
+            [[(z, y) for y, z in hole] for hole in holes],
+        )
+    msg = "dxf_axis_order chỉ hỗ trợ 'xy' hoặc 'yx'"
+    raise ValueError(msg)
+
+
 def _geom_value(value: Any, has_geometry: bool) -> float:
     """A/Iy/Iz/J: bắt buộc khi không có polygon; placeholder khi có (writer tự tính lại)."""
     if value not in (None, ""):
@@ -98,19 +114,27 @@ def _section_from_row(r: dict[str, Any], base_dir: Path) -> FrameSection:
     outer = _parse_point_pairs(r.get("outer_boundary"))
     holes = _parse_holes(r.get("holes"))
     dxf_file = r.get("dxf_file")
+    dxf_layer = str(r["dxf_layer"]) if r.get("dxf_layer") else None
+    dxf_axis_order = str(r["dxf_axis_order"]).lower() if r.get("dxf_axis_order") else None
+    taper_start = str(r["taper_start_section_id"]) if r.get("taper_start_section_id") else None
+    taper_end = str(r["taper_end_section_id"]) if r.get("taper_end_section_id") else None
     if dxf_file:
-        polygon = read_section_polygon(_resolve_path(base_dir, str(dxf_file)))
-        outer = polygon.outer_boundary
-        holes = polygon.holes
+        polygon = read_section_polygon(_resolve_path(base_dir, str(dxf_file)), layer=dxf_layer)
+        outer, holes = _apply_dxf_axis_order(
+            polygon.outer_boundary,
+            polygon.holes,
+            dxf_axis_order,
+        )
     has_geometry = outer is not None
+    has_taper = taper_start is not None and taper_end is not None
     return FrameSection(
         id=str(r["id"]),
         name=str(r.get("name") or r["id"]),
         material_id=str(r["material_id"]),
-        A=_geom_value(r.get("A"), has_geometry),
-        Iy=_geom_value(r.get("Iy"), has_geometry),
-        Iz=_geom_value(r.get("Iz"), has_geometry),
-        J=_geom_value(r.get("J"), has_geometry),
+        A=_geom_value(r.get("A"), has_geometry or has_taper),
+        Iy=_geom_value(r.get("Iy"), has_geometry or has_taper),
+        Iz=_geom_value(r.get("Iz"), has_geometry or has_taper),
+        J=_geom_value(r.get("J"), has_geometry or has_taper),
         Asy=float(r["Asy"]) if r.get("Asy") not in (None, "") else None,
         Asz=float(r["Asz"]) if r.get("Asz") not in (None, "") else None,
         kind=str(r.get("kind") or "girder"),
@@ -118,6 +142,8 @@ def _section_from_row(r: dict[str, Any], base_dir: Path) -> FrameSection:
         holes=holes,
         mesh_size=float(r.get("mesh_size") or 0.05),
         midas_offset=str(r["midas_offset"]) if r.get("midas_offset") else None,
+        taper_start_section_id=taper_start,
+        taper_end_section_id=taper_end,
     )
 
 
@@ -207,6 +233,10 @@ def read_bridge_workbook(path: Path, base_dir: Path | None = None) -> tuple[Brid
             kry=float(r["kry"]),
             krz=float(r["krz"]),
             boundary_group=str(r.get("boundary_group") or ""),
+            dof_mask=str(r.get("dof_mask") or "111111"),
+            angle=float(r.get("angle") or 0.0),
+            sd_i=float(r.get("sd_i") or 0.5),
+            sd_j=float(r.get("sd_j") or 0.5),
         )
         for r in _rows("ElasticLinks")
     ]
@@ -252,6 +282,14 @@ def read_bridge_workbook(path: Path, base_dir: Path | None = None) -> tuple[Brid
         for r in _rows("StructureGroups")
     ]
 
+    boundary_groups = [
+        BoundaryGroup(
+            id=str(r["id"]),
+            name=str(r.get("name") or r["id"]),
+        )
+        for r in _rows("BoundaryGroups")
+    ]
+
     bridge = Bridge(
         nodes=nodes,
         elements=elements,
@@ -263,6 +301,7 @@ def read_bridge_workbook(path: Path, base_dir: Path | None = None) -> tuple[Brid
         nodal_masses=nodal_masses,
         distributed_masses=distributed_masses,
         structure_groups=structure_groups,
+        boundary_groups=boundary_groups,
     )
     tracks = _read_tracks(wb)
     return bridge, tracks
